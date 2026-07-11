@@ -833,6 +833,7 @@ def write_markdown_report(result: dict, path: Path) -> None:
             "- T 日收盘生成信号，T＋1 开盘后成交；未来函数审计违规数为 0。",
             "- 初始资金 100000 元，计入佣金、印花税、过户费、10BP 单边滑点及一字板不可成交。",
             "- 基本面数据仅在公告日后的下一交易日生效，每日估值不跨日回填。" if factor_count > 15 else "",
+            "- PE、PB、股息率只抓取 118 个实际信号日，因此全面板覆盖率约 7%～10% 是稀疏设计，不是接口缺失。" if factor_count > 15 else "",
         ]
     )
     if factor_count > 15:
