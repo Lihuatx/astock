@@ -9,7 +9,8 @@ from datetime import date, datetime
 
 import numpy as np
 
-from astock.research import MarketPanel, _wilder_rsi, backtest, factor_specs, select_symbols
+from astock.research import MarketPanel, _wilder_rsi, backtest, factor_specs, fundamental_factor_specs, select_symbols
+from astock.data.tushare import FundamentalPanel, build_fundamental_panel
 from astock.paper import MultiStrategyPaperAccounts
 
 
@@ -109,6 +110,79 @@ class ResearchCausalityCase(unittest.TestCase):
                 MultiStrategyPaperAccounts(root / "paper", Decimal("100000")).execute_plan(
                     root / "plan.json", object(), date(2025, 9, 17), datetime(2025, 9, 17, 10)
                 )
+
+    def test_fundamentals_become_available_after_announcement(self) -> None:
+        class FakeClient:
+            def query_many(self, api_name, requests_, fields, workers=4):
+                if api_name == "fina_indicator":
+                    return [
+                        {
+                            "ts_code": "000001.SZ",
+                            "ann_date": "20250102",
+                            "end_date": "20241231",
+                            "roe": 10,
+                            "roic": 8,
+                            "grossprofit_margin": 30,
+                            "debt_to_assets": 40,
+                            "ocf_to_or": 12,
+                            "q_sales_yoy": 9,
+                            "q_netprofit_yoy": 11,
+                        }
+                    ]
+                return [{"ts_code": "000001.SZ", "trade_date": "20250103", "pe_ttm": 8, "pb": 1.2, "dv_ttm": 2}]
+
+        with tempfile.TemporaryDirectory() as folder:
+            dates = np.array(["2025-01-02", "2025-01-03", "2025-01-06"], dtype="U10")
+            symbols = np.array(["000001.SZ"], dtype="U12")
+            panel = build_fundamental_panel(FakeClient(), dates, symbols, dates.tolist(), Path(folder) / "f.npz")
+            self.assertTrue(np.isnan(panel.roe[0, 0]))
+            self.assertEqual(panel.roe[1, 0], 10)
+            self.assertEqual(panel.roe[2, 0], 10)
+            self.assertEqual(panel.pe_ttm[1, 0], 8)
+            self.assertTrue(np.isnan(panel.pe_ttm[2, 0]))
+
+    def test_future_fundamentals_do_not_change_existing_signal(self) -> None:
+        market = synthetic_panel()
+        shape = market.close.shape
+        values = np.tile(np.linspace(1, 8, shape[1]), (shape[0], 1))
+        fundamentals = FundamentalPanel(
+            market.dates,
+            market.symbols,
+            values,
+            values,
+            values,
+            values,
+            values,
+            values,
+            values,
+            values + 5,
+            values,
+            values,
+        )
+        changed_values = values.copy()
+        changed_values[181:] *= 100
+        changed = FundamentalPanel(
+            market.dates,
+            market.symbols,
+            changed_values,
+            changed_values,
+            changed_values,
+            changed_values,
+            changed_values,
+            changed_values,
+            changed_values,
+            changed_values + 5,
+            changed_values,
+            changed_values,
+        )
+        for original_spec, changed_spec in zip(
+            fundamental_factor_specs(fundamentals), fundamental_factor_specs(changed), strict=True
+        ):
+            self.assertEqual(
+                select_symbols(market, original_spec, 180).tolist(),
+                select_symbols(market, changed_spec, 180).tolist(),
+                original_spec.name,
+            )
 
 
 if __name__ == "__main__":

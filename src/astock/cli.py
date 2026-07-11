@@ -18,7 +18,8 @@ from astock.replay import ReplayEngine
 from astock.risk import RiskEngine
 from astock.storage import Repository
 from astock.strategy import MomentumTrendStrategy
-from astock.research import MarketPanel, fetch_market_panel, run_research, write_markdown_report, write_report
+from astock.research import MarketPanel, fetch_market_panel, research_signal_dates, run_research, write_markdown_report, write_report
+from astock.data.tushare import FundamentalPanel, TushareProxyClient, build_fundamental_panel, update_valuation_date
 from astock.paper import MultiStrategyPaperAccounts
 
 
@@ -97,6 +98,47 @@ def research(args: argparse.Namespace) -> int:
     return 0
 
 
+def fundamental_research(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    if not settings.tushare_base_token:
+        raise ValueError("TUSHARE_BASE_TOKEN is required")
+    market_path = settings.data_dir / "research" / "market_panel.npz"
+    panel = MarketPanel.load(market_path)
+    fundamental_path = settings.data_dir / "research" / "fundamental_panel.npz"
+    if fundamental_path.exists() and not args.refresh:
+        fundamentals = FundamentalPanel.load(fundamental_path)
+    else:
+        client = TushareProxyClient(
+            settings.tushare_base_url,
+            settings.tushare_base_token,
+            settings.data_dir / "tushare" / "cache",
+        )
+        fundamentals = build_fundamental_panel(
+            client, panel.dates, panel.symbols, research_signal_dates(panel), fundamental_path
+        )
+    result = run_research(panel, fundamentals)
+    current_report = settings.data_dir / "reports" / "strategy_research.json"
+    v4_data = settings.data_dir / "research" / "strategy_research_v4.json"
+    v4_document = settings.data_dir.parent / "docs" / "STRATEGY_RESEARCH_V4.md"
+    write_report(result, current_report)
+    write_report(result, v4_data)
+    write_markdown_report(result, v4_document)
+    print(
+        json.dumps(
+            {
+                "symbols": len(panel.symbols),
+                "trading_days": len(panel.dates),
+                "factors": result["methodology"]["factor_count"],
+                "selected": [item["strategy"] for item in result["selected"]],
+                "v4_report": str(v4_document),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def paper_prepare(args: argparse.Namespace) -> int:
     settings = _settings(args)
     report_path = settings.data_dir / "reports" / "strategy_research.json"
@@ -110,8 +152,17 @@ def paper_signals(args: argparse.Namespace) -> int:
     settings = _settings(args)
     report_path = settings.data_dir / "reports" / "strategy_research.json"
     panel = MarketPanel.load(settings.data_dir / "research" / "market_panel.npz")
+    fundamental_path = settings.data_dir / "research" / "fundamental_panel.npz"
+    fundamentals = FundamentalPanel.load(fundamental_path) if fundamental_path.exists() else None
+    if fundamentals is not None and settings.tushare_base_token:
+        client = TushareProxyClient(
+            settings.tushare_base_url,
+            settings.tushare_base_token,
+            settings.data_dir / "tushare" / "cache",
+        )
+        fundamentals = update_valuation_date(client, fundamentals, str(panel.dates[-1]), fundamental_path)
     target_path = settings.data_dir / "paper" / "pending_signals.json"
-    plan = MultiStrategyPaperAccounts.create_signal_plan(report_path, panel, target_path)
+    plan = MultiStrategyPaperAccounts.create_signal_plan(report_path, panel, target_path, fundamentals)
     signal_day = date.fromisoformat(plan["signal_date"])
     future_dates = TdxClient(settings.tdx_base_url).get_trading_dates(
         (signal_day + timedelta(days=1)).strftime("%Y%m%d"),
@@ -155,6 +206,10 @@ def build_parser() -> argparse.ArgumentParser:
     research_parser.add_argument("--refresh", action="store_true")
     research_parser.add_argument("--env-file", type=Path)
     research_parser.set_defaults(handler=research)
+    fundamental_parser = subparsers.add_parser("research-fundamental", help="运行点时正确的技术面和基本面联合研究")
+    fundamental_parser.add_argument("--refresh", action="store_true")
+    fundamental_parser.add_argument("--env-file", type=Path)
+    fundamental_parser.set_defaults(handler=fundamental_research)
     paper_parser = subparsers.add_parser("paper-prepare", help="准备三个隔离策略账户和组合观察账户")
     paper_parser.add_argument("--env-file", type=Path)
     paper_parser.set_defaults(handler=paper_prepare)

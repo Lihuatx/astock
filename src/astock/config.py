@@ -26,6 +26,8 @@ class Settings:
     tdx_base_url: str
     ths_base_url: str
     ths_api_key: str | None
+    tushare_base_url: str
+    tushare_base_token: str | None
     data_dir: Path
     db_path: Path
     initial_cash: Decimal
@@ -40,8 +42,9 @@ class Settings:
             tdx_base_url=os.getenv("TDX_BASE_URL", "http://127.0.0.1:17709/"),
             ths_base_url=os.getenv("THS_BASE_URL", "https://fuyao.aicubes.cn"),
             ths_api_key=os.getenv("THS_API_KEY") or None,
+            tushare_base_url=os.getenv("TUSHARE_BASE_URL", "https://fastapic.stockai888.top"),
+            tushare_base_token=os.getenv("TUSHARE_BASE_TOKEN") or None,
             data_dir=data_dir,
             db_path=db_path,
             initial_cash=Decimal(os.getenv("ASTOCK_INITIAL_CASH", "100000")),
         )
-

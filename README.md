@@ -26,6 +26,7 @@ python -m unittest discover -s tests -v
 python -m astock.cli doctor --env-file .env.demo
 python -m astock.cli replay --symbol 000001.SZ --start 20250101 --end 20260710 --env-file .env.demo
 python -m astock.cli research --env-file .env.demo
+python -m astock.cli research-fundamental --env-file .env.demo
 python -m astock.cli paper-prepare --env-file .env.demo
 python -m astock.cli paper-signals --env-file .env.demo
 # 仅在下一交易日、TDX 日历确认后执行：
@@ -36,4 +37,4 @@ python -m astock.cli paper-execute --env-file .env.demo
 
 `replay` 使用临时 SQLite 数据库执行策略、风控、OMS、模拟成交与逐日对账，不会触发真实交易，也不会改写正式账户数据。
 
-最新策略研究结论见 `docs/STRATEGY_RESEARCH_V3.md`。三个模拟策略使用完全隔离的 100000 元账户，另设一个 100000 元组合观察账户；它们目前都是待前向淘汰的候选，不是实盘策略。
+最新策略研究结论见 `docs/STRATEGY_RESEARCH_V4.md`。三个模拟策略使用完全隔离的 100000 元账户，另设一个 100000 元组合观察账户；它们目前都是待前向淘汰的候选，不是实盘策略。

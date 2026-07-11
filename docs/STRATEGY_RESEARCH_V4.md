@@ -1,16 +1,14 @@
-# 三策略研究报告 V3
-
-> 本报告已被 `STRATEGY_RESEARCH_V4.md` 取代，仅保留为纯量价因子阶段的历史记录。
+# 三策略研究报告 V4
 
 ## 结论
 
-V3 共评估 15 个因子、405 组研究期参数配置，并增加参数平坦度、相关性、成交置信度和成本敏感性。2026 只作压力测试，不参与候选选择。
+V4 共评估 20 个因子、540 组研究期参数配置，并包含参数平坦度、相关性、成交置信度和成本敏感性。2026 只作压力测试，不参与候选选择。
 
 | 策略 | 逻辑 | 冻结配置 | 2024 年化／回撤 | 2025 年化／回撤 | 2026 压力年化／回撤 | 置信度 | 达标 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| fundamental_value | fundamental_value | 5 只／40 日／宽度 40% | 12.58%／5.62% | 0.20%／16.58% | -6.75%／8.57% | low | 否 |
 | low_volatility_trend | volatility | 20 只／40 日／宽度 30% | 2.79%／4.53% | 5.18%／4.43% | -8.23%／8.44% | standard | 否 |
-| short_term_reversal | reversal | 10 只／20 日／宽度 40% | 11.51%／16.12% | 12.56%／18.31% | -26.23%／19.22% | low | 否 |
-| upside_downside_volatility | asymmetry | 5 只／40 日／宽度 50% | 2.35%／11.30% | 15.21%／14.79% | 11.89%／7.23% | low | 否 |
+| bollinger_reversion | reversal | 5 只／40 日／宽度 30% | -9.25%／11.99% | 20.62%／9.82% | 5.84%／12.17% | standard | 否 |
 
 ## 方法
 
@@ -19,15 +17,51 @@ V3 共评估 15 个因子、405 组研究期参数配置，并增加参数平坦
 - 最终排名要求两个验证期不能同时亏损，并以验证期日收益相关性作软惩罚，不再按家族标签硬去重。
 - T 日收盘生成信号，T＋1 开盘后成交；未来函数审计违规数为 0。
 - 初始资金 100000 元，计入佣金、印花税、过户费、10BP 单边滑点及一字板不可成交。
+- 基本面数据仅在公告日后的下一交易日生效，每日估值不跨日回填。
+
+## 基本面数据覆盖率
+
+| 字段 | 全面板覆盖率 |
+| --- | ---: |
+| roe | 98.1% |
+| roic | 95.4% |
+| grossprofit_margin | 95.2% |
+| debt_to_assets | 98.5% |
+| ocf_to_or | 98.4% |
+| q_sales_yoy | 97.0% |
+| q_netprofit_yoy | 97.1% |
+| pe_ttm | 7.6% |
+| pb | 9.6% |
+| dv_ttm | 6.7% |
 
 ## 全部冻结因子表现
 
 | 因子 | 家族 | 区间 | 年化 | 最大回撤 | Sharpe | Calmar | 换手 | 成本 | 成交数 | 持仓覆盖 |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **upside_downside_volatility** | asymmetry | research | 0.37% | 12.35% | 0.09 | 0.03 | 4.9 | 309 | 36 | 27.3% |
-| **upside_downside_volatility** | asymmetry | validation_2024 | 2.35% | 11.30% | 0.26 | 0.21 | 2.2 | 116 | 15 | 17.4% |
-| **upside_downside_volatility** | asymmetry | validation_2025 | 15.21% | 14.79% | 0.87 | 1.03 | 7.6 | 412 | 45 | 67.1% |
-| **upside_downside_volatility** | asymmetry | stress_2026 | 11.89% | 7.23% | 0.85 | 1.65 | 1.2 | 74 | 8 | 32.3% |
+| upside_downside_volatility | asymmetry | research | 0.37% | 12.35% | 0.09 | 0.03 | 4.9 | 309 | 36 | 27.3% |
+| upside_downside_volatility | asymmetry | validation_2024 | 2.35% | 11.30% | 0.26 | 0.21 | 2.2 | 116 | 15 | 17.4% |
+| upside_downside_volatility | asymmetry | validation_2025 | 15.21% | 14.79% | 0.87 | 1.03 | 7.6 | 412 | 45 | 67.1% |
+| upside_downside_volatility | asymmetry | stress_2026 | 11.89% | 7.23% | 0.85 | 1.65 | 1.2 | 74 | 8 | 32.3% |
+| fundamental_quality_growth | fundamental_composite | research | -7.70% | 21.45% | -0.86 | -0.36 | 3.8 | 663 | 116 | 65.9% |
+| fundamental_quality_growth | fundamental_composite | validation_2024 | -3.22% | 6.03% | -0.49 | -0.53 | 1.1 | 177 | 32 | 33.9% |
+| fundamental_quality_growth | fundamental_composite | validation_2025 | 22.07% | 5.86% | 2.08 | 3.77 | 3.6 | 505 | 85 | 83.5% |
+| fundamental_quality_growth | fundamental_composite | stress_2026 | -20.96% | 12.43% | -2.36 | -1.69 | 1.6 | 270 | 46 | 64.5% |
+| fundamental_quality_value | fundamental_composite | research | -0.25% | 13.96% | 0.03 | -0.02 | 5.1 | 788 | 134 | 65.9% |
+| fundamental_quality_value | fundamental_composite | validation_2024 | 4.83% | 4.40% | 0.82 | 1.10 | 1.9 | 276 | 48 | 33.9% |
+| fundamental_quality_value | fundamental_composite | validation_2025 | 12.99% | 6.93% | 1.33 | 1.87 | 4.0 | 545 | 92 | 83.5% |
+| fundamental_quality_value | fundamental_composite | stress_2026 | -10.28% | 10.62% | -1.03 | -0.97 | 2.3 | 348 | 58 | 64.5% |
+| fundamental_growth | fundamental_growth | research | -3.48% | 17.12% | -0.25 | -0.20 | 7.3 | 1197 | 205 | 65.9% |
+| fundamental_growth | fundamental_growth | validation_2024 | -5.22% | 8.63% | -0.49 | -0.60 | 2.0 | 314 | 56 | 33.9% |
+| fundamental_growth | fundamental_growth | validation_2025 | 21.65% | 7.96% | 1.54 | 2.72 | 5.2 | 684 | 114 | 83.5% |
+| fundamental_growth | fundamental_growth | stress_2026 | -11.87% | 8.72% | -0.81 | -1.36 | 2.3 | 359 | 60 | 64.5% |
+| fundamental_quality | fundamental_quality | research | -3.72% | 10.97% | -0.45 | -0.34 | 2.4 | 397 | 69 | 65.9% |
+| fundamental_quality | fundamental_quality | validation_2024 | -5.81% | 6.53% | -1.35 | -0.89 | 1.0 | 155 | 28 | 33.9% |
+| fundamental_quality | fundamental_quality | validation_2025 | 9.22% | 3.53% | 1.20 | 2.61 | 2.2 | 329 | 57 | 83.5% |
+| fundamental_quality | fundamental_quality | stress_2026 | -15.71% | 10.33% | -1.98 | -1.52 | 1.4 | 234 | 40 | 64.5% |
+| **fundamental_value** | fundamental_value | research | 6.61% | 9.98% | 0.75 | 0.66 | 5.9 | 321 | 37 | 38.7% |
+| **fundamental_value** | fundamental_value | validation_2024 | 12.58% | 5.62% | 1.58 | 2.24 | 2.6 | 135 | 17 | 33.9% |
+| **fundamental_value** | fundamental_value | validation_2025 | 0.20% | 16.58% | 0.08 | 0.01 | 2.3 | 117 | 15 | 83.5% |
+| **fundamental_value** | fundamental_value | stress_2026 | -6.75% | 8.57% | -0.73 | -0.79 | 1.7 | 104 | 12 | 64.5% |
 | accelerating_momentum | multi_cycle | research | 2.04% | 30.56% | 0.20 | 0.07 | 9.0 | 587 | 70 | 23.9% |
 | accelerating_momentum | multi_cycle | validation_2024 | -22.30% | 35.18% | -1.16 | -0.63 | 4.0 | 240 | 31 | 25.6% |
 | accelerating_momentum | multi_cycle | validation_2025 | -20.17% | 40.41% | -0.60 | -0.50 | 11.9 | 797 | 101 | 83.5% |
@@ -36,18 +70,18 @@ V3 共评估 15 个因子、405 组研究期参数配置，并增加参数平坦
 | multi_timeframe_momentum | multi_cycle | validation_2024 | -19.84% | 40.57% | -0.81 | -0.49 | 4.0 | 222 | 27 | 25.6% |
 | multi_timeframe_momentum | multi_cycle | validation_2025 | -36.35% | 47.96% | -1.44 | -0.76 | 9.4 | 689 | 93 | 83.5% |
 | multi_timeframe_momentum | multi_cycle | stress_2026 | -37.81% | 22.57% | -2.30 | -1.68 | 2.1 | 140 | 18 | 32.3% |
-| bollinger_reversion | reversal | research | 4.53% | 19.51% | 0.35 | 0.23 | 12.7 | 791 | 95 | 65.9% |
-| bollinger_reversion | reversal | validation_2024 | -9.25% | 11.99% | -1.10 | -0.77 | 3.3 | 192 | 25 | 33.9% |
-| bollinger_reversion | reversal | validation_2025 | 20.62% | 9.82% | 1.44 | 2.10 | 8.7 | 478 | 54 | 83.5% |
-| bollinger_reversion | reversal | stress_2026 | 5.84% | 12.17% | 0.46 | 0.48 | 3.1 | 181 | 20 | 64.5% |
+| **bollinger_reversion** | reversal | research | 4.53% | 19.51% | 0.35 | 0.23 | 12.7 | 791 | 95 | 65.9% |
+| **bollinger_reversion** | reversal | validation_2024 | -9.25% | 11.99% | -1.10 | -0.77 | 3.3 | 192 | 25 | 33.9% |
+| **bollinger_reversion** | reversal | validation_2025 | 20.62% | 9.82% | 1.44 | 2.10 | 8.7 | 478 | 54 | 83.5% |
+| **bollinger_reversion** | reversal | stress_2026 | 5.84% | 12.17% | 0.46 | 0.48 | 3.1 | 181 | 20 | 64.5% |
 | rsi_oversold_reversal | reversal | research | 3.14% | 10.45% | 0.36 | 0.30 | 30.2 | 2042 | 256 | 48.9% |
 | rsi_oversold_reversal | reversal | validation_2024 | -7.82% | 8.29% | -1.66 | -0.94 | 3.9 | 238 | 32 | 29.8% |
 | rsi_oversold_reversal | reversal | validation_2025 | 7.69% | 9.01% | 0.66 | 0.85 | 24.4 | 1828 | 240 | 79.4% |
 | rsi_oversold_reversal | reversal | stress_2026 | -10.60% | 10.61% | -0.84 | -1.00 | 5.9 | 382 | 46 | 56.5% |
-| **short_term_reversal** | reversal | research | 0.24% | 14.46% | 0.09 | 0.02 | 17.0 | 1423 | 196 | 34.1% |
-| **short_term_reversal** | reversal | validation_2024 | 11.51% | 16.12% | 0.70 | 0.71 | 8.6 | 645 | 89 | 33.9% |
-| **short_term_reversal** | reversal | validation_2025 | 12.56% | 18.31% | 0.62 | 0.69 | 20.3 | 1627 | 224 | 91.8% |
-| **short_term_reversal** | reversal | stress_2026 | -26.23% | 19.22% | -1.84 | -1.36 | 4.5 | 403 | 58 | 48.4% |
+| short_term_reversal | reversal | research | 0.24% | 14.46% | 0.09 | 0.02 | 17.0 | 1423 | 196 | 34.1% |
+| short_term_reversal | reversal | validation_2024 | 11.51% | 16.12% | 0.70 | 0.71 | 8.6 | 645 | 89 | 33.9% |
+| short_term_reversal | reversal | validation_2025 | 12.56% | 18.31% | 0.62 | 0.69 | 20.3 | 1627 | 224 | 91.8% |
+| short_term_reversal | reversal | stress_2026 | -26.23% | 19.22% | -1.84 | -1.36 | 4.5 | 403 | 58 | 48.4% |
 | breakout_120 | trend | research | -1.84% | 16.96% | -0.04 | -0.11 | 4.8 | 305 | 36 | 27.3% |
 | breakout_120 | trend | validation_2024 | -3.47% | 6.63% | -0.46 | -0.52 | 1.2 | 57 | 9 | 17.4% |
 | breakout_120 | trend | validation_2025 | 5.15% | 21.81% | 0.32 | 0.24 | 5.8 | 341 | 41 | 67.1% |
@@ -92,6 +126,11 @@ V3 共评估 15 个因子、405 组研究期参数配置，并增加参数平坦
 | accelerating_momentum | 0.117 | -0.345 | 0.187 | 0% |
 | bollinger_reversion | 0.320 | 0.112 | 0.360 | 67% |
 | breakout_120 | -0.119 | -0.423 | 0.179 | 0% |
+| fundamental_growth | -0.265 | -0.373 | 0.139 | 0% |
+| fundamental_quality | -0.451 | -0.652 | 0.054 | 0% |
+| fundamental_quality_growth | -0.574 | -0.728 | 0.036 | 0% |
+| fundamental_quality_value | -0.012 | -0.088 | 0.112 | 0% |
+| fundamental_value | 0.849 | 0.508 | 0.202 | 100% |
 | low_volatility_trend | 0.697 | 0.287 | 0.269 | 67% |
 | momentum_120_ex5 | 0.253 | -0.154 | 0.199 | 25% |
 | momentum_20_60 | 0.906 | 0.180 | 0.349 | 100% |
@@ -107,32 +146,32 @@ V3 共评估 15 个因子、405 组研究期参数配置，并增加参数平坦
 
 ## 候选相关性
 
-- `low_volatility_trend` 与 `short_term_reversal`：0.271。
-- `low_volatility_trend` 与 `upside_downside_volatility`：0.434。
-- `short_term_reversal` 与 `upside_downside_volatility`：0.352。
+- `fundamental_value` 与 `low_volatility_trend`：0.678。
+- `bollinger_reversion` 与 `fundamental_value`：0.118。
+- `bollinger_reversion` 与 `low_volatility_trend`：0.434。
 
 ## 滑点敏感性
 
 | 策略 | 区间 | 单边滑点 | 年化 | 最大回撤 |
 | --- | --- | ---: | ---: | ---: |
+| fundamental_value | validation_2024 | 10BP | 12.58% | 5.62% |
+| fundamental_value | validation_2025 | 10BP | 0.20% | 16.58% |
+| fundamental_value | validation_2024 | 20BP | 12.25% | 5.63% |
+| fundamental_value | validation_2025 | 20BP | -0.00% | 16.49% |
+| fundamental_value | validation_2024 | 30BP | 11.91% | 5.55% |
+| fundamental_value | validation_2025 | 30BP | -0.22% | 16.55% |
 | low_volatility_trend | validation_2024 | 10BP | 2.79% | 4.53% |
 | low_volatility_trend | validation_2025 | 10BP | 5.18% | 4.43% |
 | low_volatility_trend | validation_2024 | 20BP | 2.47% | 4.53% |
 | low_volatility_trend | validation_2025 | 20BP | 4.38% | 4.43% |
 | low_volatility_trend | validation_2024 | 30BP | 2.17% | 4.50% |
 | low_volatility_trend | validation_2025 | 30BP | 3.76% | 4.43% |
-| short_term_reversal | validation_2024 | 10BP | 11.51% | 16.12% |
-| short_term_reversal | validation_2025 | 10BP | 12.56% | 18.31% |
-| short_term_reversal | validation_2024 | 20BP | 10.64% | 16.34% |
-| short_term_reversal | validation_2025 | 20BP | 10.60% | 18.94% |
-| short_term_reversal | validation_2024 | 30BP | 9.86% | 16.35% |
-| short_term_reversal | validation_2025 | 30BP | 9.00% | 19.51% |
-| upside_downside_volatility | validation_2024 | 10BP | 2.35% | 11.30% |
-| upside_downside_volatility | validation_2025 | 10BP | 15.21% | 14.79% |
-| upside_downside_volatility | validation_2024 | 20BP | 2.13% | 11.43% |
-| upside_downside_volatility | validation_2025 | 20BP | 14.50% | 14.92% |
-| upside_downside_volatility | validation_2024 | 30BP | 1.91% | 11.56% |
-| upside_downside_volatility | validation_2025 | 30BP | 13.24% | 15.00% |
+| bollinger_reversion | validation_2024 | 10BP | -9.25% | 11.99% |
+| bollinger_reversion | validation_2025 | 10BP | 20.62% | 9.82% |
+| bollinger_reversion | validation_2024 | 20BP | -9.59% | 12.15% |
+| bollinger_reversion | validation_2025 | 20BP | 19.78% | 9.82% |
+| bollinger_reversion | validation_2024 | 30BP | -9.92% | 12.30% |
+| bollinger_reversion | validation_2025 | 30BP | 18.86% | 9.83% |
 
 ## 缩量整理阈值敏感性
 
@@ -153,3 +192,5 @@ V3 共评估 15 个因子、405 组研究期参数配置，并增加参数平坦
 - 缺少历史 ST 状态，无法精确重建 5% 涨跌停限制。
 - 日线只能近似成交，下一阶段必须使用 5 分钟数据验证执行质量。
 - 此前研究已经观察过 2026 市场状态，因此 2026 只能作为压力测试，不能称为未观察样本。
+- Tushare 数据来自第三方代理，存在服务中断、延迟、token 撤销和协议变化风险。
+- 当前股票池仍以现有证券列表为基础，基本面接入尚未消除退市股幸存者偏差。

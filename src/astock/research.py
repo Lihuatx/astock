@@ -13,6 +13,7 @@ from typing import Callable
 import numpy as np
 
 from astock.data.tdx import TdxClient
+from astock.data.tushare import FundamentalPanel
 from astock.fees import FeeSchedule
 
 
@@ -185,6 +186,22 @@ def _masked(score: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return np.where(mask & np.isfinite(score), score, np.nan)
 
 
+def _cross_sectional_zscore(values: np.ndarray) -> np.ndarray:
+    finite = np.isfinite(values)
+    if np.sum(finite) < 20:
+        return np.full_like(values, np.nan, dtype=np.float64)
+    lower, upper = np.nanpercentile(values[finite], [1, 99])
+    clipped = np.clip(values, lower, upper)
+    deviation = np.nanstd(clipped)
+    return (clipped - np.nanmean(clipped)) / deviation if deviation > 0 else np.full_like(values, np.nan)
+
+
+def _combine_scores(components: list[np.ndarray], minimum_present: int) -> np.ndarray:
+    stacked = np.stack(components)
+    present = np.sum(np.isfinite(stacked), axis=0)
+    return np.where(present >= minimum_present, np.nansum(stacked, axis=0), np.nan)
+
+
 def factor_specs() -> tuple[FactorSpec, ...]:
     def momentum_20_60(panel: MarketPanel, index: int) -> np.ndarray:
         return _masked(_return(panel, index, 20) + _return(panel, index, 60), _trend_mask(panel, index))
@@ -303,6 +320,69 @@ def factor_specs() -> tuple[FactorSpec, ...]:
         FactorSpec("volume_confirmed_breakout", "volume", "120-day breakout confirmed by 5-day volume", 121, volume_confirmed_breakout),
         FactorSpec("volume_dry_up", "volume", "volume dry-up during narrow trend consolidation", 121, _volume_dry_up_scorer(0.12)),
     )
+
+
+def fundamental_factor_specs(panel: FundamentalPanel) -> tuple[FactorSpec, ...]:
+    def value(panel_: MarketPanel, index: int) -> np.ndarray:
+        pe = panel.pe_ttm[index]
+        pb = panel.pb[index]
+        dividend = panel.dv_ttm[index]
+        earnings_yield = np.where(pe > 0, 1.0 / pe, np.nan)
+        book_yield = np.where(pb > 0, 1.0 / pb, np.nan)
+        return _combine_scores(
+            [
+                _cross_sectional_zscore(earnings_yield),
+                _cross_sectional_zscore(book_yield),
+                0.5 * _cross_sectional_zscore(dividend),
+            ],
+            2,
+        )
+
+    def quality(panel_: MarketPanel, index: int) -> np.ndarray:
+        return _combine_scores(
+            [
+                _cross_sectional_zscore(panel.roe[index]),
+                _cross_sectional_zscore(panel.roic[index]),
+                _cross_sectional_zscore(panel.grossprofit_margin[index]),
+                _cross_sectional_zscore(panel.ocf_to_or[index]),
+                -_cross_sectional_zscore(panel.debt_to_assets[index]),
+            ],
+            3,
+        )
+
+    def growth(panel_: MarketPanel, index: int) -> np.ndarray:
+        return _combine_scores(
+            [_cross_sectional_zscore(panel.q_sales_yoy[index]), _cross_sectional_zscore(panel.q_netprofit_yoy[index])], 2
+        )
+
+    def quality_value(panel_: MarketPanel, index: int) -> np.ndarray:
+        return _combine_scores([quality(panel_, index), value(panel_, index)], 2)
+
+    def quality_growth(panel_: MarketPanel, index: int) -> np.ndarray:
+        return _combine_scores([quality(panel_, index), growth(panel_, index)], 2)
+
+    return (
+        FactorSpec("fundamental_value", "fundamental_value", "point-in-time earnings, book and dividend yield", 121, value),
+        FactorSpec("fundamental_quality", "fundamental_quality", "point-in-time profitability, cash quality and leverage", 121, quality),
+        FactorSpec("fundamental_growth", "fundamental_growth", "point-in-time quarterly sales and profit growth", 121, growth),
+        FactorSpec("fundamental_quality_value", "fundamental_composite", "quality plus value composite", 121, quality_value),
+        FactorSpec("fundamental_quality_growth", "fundamental_composite", "quality plus growth composite", 121, quality_growth),
+    )
+
+
+def research_signal_dates(panel: MarketPanel) -> list[str]:
+    periods = (
+        ("2021-01-01", "2023-12-31"),
+        ("2024-01-01", "2024-12-31"),
+        ("2025-01-01", "2025-12-31"),
+        ("2026-01-01", "2026-12-31"),
+    )
+    selected: set[str] = set()
+    for start, end in periods:
+        indices = np.flatnonzero((panel.dates >= start) & (panel.dates <= end))
+        for cadence in (10, 20, 40):
+            selected.update(str(panel.dates[index]) for offset, index in enumerate(indices) if offset % cadence == cadence - 1)
+    return sorted(selected)
 
 
 @dataclass(frozen=True)
@@ -467,16 +547,17 @@ def backtest(
     return performance, equity_curve, audit
 
 
-def run_research(panel: MarketPanel) -> dict:
+def run_research(panel: MarketPanel, fundamentals: FundamentalPanel | None = None) -> dict:
     periods = {
         "research": ("2021-01-01", "2023-12-31"),
         "validation_2024": ("2024-01-01", "2024-12-31"),
         "validation_2025": ("2025-01-01", "2025-12-31"),
         "stress_2026": ("2026-01-01", "2026-12-31"),
     }
+    specs = factor_specs() + (fundamental_factor_specs(fundamentals) if fundamentals is not None else ())
     optimized: list[FactorSpec] = []
     stability: dict[str, dict] = {}
-    for base in factor_specs():
+    for base in specs:
         grid: dict[tuple[int, int, float], tuple[FactorSpec, Performance, float]] = {}
         for top_n in (5, 10, 20):
             for rebalance_days in (10, 20, 40):
@@ -533,6 +614,10 @@ def run_research(panel: MarketPanel) -> dict:
     result_lookup = {(item.strategy, item.period): item for item in results}
     ranked: list[tuple[float, FactorSpec]] = []
     for spec in optimized:
+        if stability[spec.name]["research_score"] <= 0:
+            continue
+        if stability[spec.name]["positive_neighbor_ratio"] < 0.50:
+            continue
         first = result_lookup[(spec.name, "validation_2024")]
         second = result_lookup[(spec.name, "validation_2025")]
         if first.annual_return < 0 and second.annual_return < 0:
@@ -638,21 +723,50 @@ def run_research(panel: MarketPanel) -> dict:
             )
     return {
         "methodology": {
+            "factor_count": len(specs),
+            "configuration_count": len(specs) * 27,
             "initial_cash": INITIAL_CASH,
             "target_annual_return": 0.15,
             "target_max_drawdown": 0.15,
             "signal_execution": "T close signal, T+1 open execution",
             "rebalance": "optimized from 10, 20, or 40 trading days",
             "optimization_rule": "research score plus 0.25 times median neighboring-parameter score; minimum 30 research trades",
-            "selection_rule": "2024 and 2025 validation composite score with drawdown penalty and 0.15 times maximum validation-return correlation penalty",
+            "selection_rule": "positive research score and at least 50 percent positive neighbors, then 2024/2025 composite score with drawdown and correlation penalties",
             "parameter_grid": {"top_n": [5, 10, 20], "rebalance_days": [10, 20, 40], "minimum_market_breadth": [0.30, 0.40, 0.50]},
             "slippage": SLIPPAGE,
             "causality_violations": audits,
+            "fundamental_coverage": (
+                {
+                    name: float(np.mean(np.isfinite(getattr(fundamentals, name))))
+                    for name in (
+                        "roe",
+                        "roic",
+                        "grossprofit_margin",
+                        "debt_to_assets",
+                        "ocf_to_or",
+                        "q_sales_yoy",
+                        "q_netprofit_yoy",
+                        "pe_ttm",
+                        "pb",
+                        "dv_ttm",
+                    )
+                }
+                if fundamentals is not None
+                else None
+            ),
             "known_limitations": [
                 "当前证券列表不含历史退市股票，存在幸存者偏差。",
                 "缺少历史 ST 状态，无法精确重建 5% 涨跌停限制。",
                 "日线只能近似成交，下一阶段必须使用 5 分钟数据验证执行质量。",
                 "此前研究已经观察过 2026 市场状态，因此 2026 只能作为压力测试，不能称为未观察样本。",
+                *(
+                    [
+                        "Tushare 数据来自第三方代理，存在服务中断、延迟、token 撤销和协议变化风险。",
+                        "当前股票池仍以现有证券列表为基础，基本面接入尚未消除退市股幸存者偏差。",
+                    ]
+                    if fundamentals is not None
+                    else []
+                ),
             ],
         },
         "selected": selected,
@@ -684,12 +798,15 @@ def write_markdown_report(result: dict, path: Path) -> None:
     selected_names = {item["strategy"] for item in result["selected"]}
     result_lookup = {(item["strategy"], item["period"]): item for item in result["results"]}
     periods = ("research", "validation_2024", "validation_2025", "stress_2026")
+    factor_count = result["methodology"]["factor_count"]
+    configuration_count = result["methodology"]["configuration_count"]
+    version = "V4" if factor_count > 15 else "V3"
     lines = [
-        "# 三策略研究报告 V3",
+        f"# 三策略研究报告 {version}",
         "",
         "## 结论",
         "",
-        "V3 共评估 15 个因子、405 组研究期参数配置，并增加参数平坦度、相关性、成交置信度和成本敏感性。2026 只作压力测试，不参与候选选择。",
+        f"{version} 共评估 {factor_count} 个因子、{configuration_count} 组研究期参数配置，并包含参数平坦度、相关性、成交置信度和成本敏感性。2026 只作压力测试，不参与候选选择。",
         "",
         "| 策略 | 逻辑 | 冻结配置 | 2024 年化／回撤 | 2025 年化／回撤 | 2026 压力年化／回撤 | 置信度 | 达标 |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -715,6 +832,15 @@ def write_markdown_report(result: dict, path: Path) -> None:
             "- 最终排名要求两个验证期不能同时亏损，并以验证期日收益相关性作软惩罚，不再按家族标签硬去重。",
             "- T 日收盘生成信号，T＋1 开盘后成交；未来函数审计违规数为 0。",
             "- 初始资金 100000 元，计入佣金、印花税、过户费、10BP 单边滑点及一字板不可成交。",
+            "- 基本面数据仅在公告日后的下一交易日生效，每日估值不跨日回填。" if factor_count > 15 else "",
+        ]
+    )
+    if factor_count > 15:
+        lines.extend(["", "## 基本面数据覆盖率", "", "| 字段 | 全面板覆盖率 |", "| --- | ---: |"])
+        for name, coverage in result["methodology"]["fundamental_coverage"].items():
+            lines.append(f"| {name} | {coverage:.1%} |")
+    lines.extend(
+        [
             "",
             "## 全部冻结因子表现",
             "",

@@ -11,7 +11,8 @@ from astock.broker import AShareSimBroker
 from astock.data.tdx import TdxClient
 from astock.oms import OMS
 from astock.models import Side
-from astock.research import MarketPanel, factor_specs, select_symbols
+from astock.data.tushare import FundamentalPanel
+from astock.research import MarketPanel, factor_specs, fundamental_factor_specs, select_symbols
 from astock.risk import RiskEngine, RiskLimits
 from astock.storage import Repository
 from astock.strategy import MomentumTrendStrategy
@@ -66,9 +67,15 @@ class MultiStrategyPaperAccounts:
         return statuses
 
     @staticmethod
-    def create_signal_plan(report_path: Path, panel: MarketPanel, target_path: Path) -> dict:
+    def create_signal_plan(
+        report_path: Path,
+        panel: MarketPanel,
+        target_path: Path,
+        fundamentals: FundamentalPanel | None = None,
+    ) -> dict:
         report = json.loads(report_path.read_text(encoding="utf-8"))
-        specs = {spec.name: spec for spec in factor_specs()}
+        available_specs = factor_specs() + (fundamental_factor_specs(fundamentals) if fundamentals is not None else ())
+        specs = {spec.name: spec for spec in available_specs}
         signal_index = len(panel.dates) - 1
         strategies = []
         for selected in report.get("selected") or []:
