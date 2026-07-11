@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "astock"
+version = "0.1.0"
+description = "A 股本机模拟交易与研究系统"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.optional-dependencies]
+vnpy = ["vnpy==4.4.0"]
+
+[project.scripts]
+astock = "astock.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/astock"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
