@@ -82,16 +82,16 @@ def research(args: argparse.Namespace) -> int:
     result = run_research(panel)
     report_path = settings.data_dir / "reports" / "strategy_research.json"
     write_report(result, report_path)
-    v2_data_path = settings.data_dir / "research" / "strategy_research_v2.json"
-    write_report(result, v2_data_path)
-    v2_document_path = settings.data_dir.parent / "docs" / "STRATEGY_RESEARCH_V2.md"
-    write_markdown_report(result, v2_document_path)
+    v3_data_path = settings.data_dir / "research" / "strategy_research_v3.json"
+    write_report(result, v3_data_path)
+    v3_document_path = settings.data_dir.parent / "docs" / "STRATEGY_RESEARCH_V3.md"
+    write_markdown_report(result, v3_document_path)
     summary = {
         "symbols": len(panel.symbols),
         "trading_days": len(panel.dates),
         "selected": [item["strategy"] for item in result["selected"]],
         "report": str(report_path),
-        "v2_report": str(v2_document_path),
+        "v3_report": str(v3_document_path),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

@@ -10,10 +10,14 @@ from zoneinfo import ZoneInfo
 from astock.broker import AShareSimBroker
 from astock.data.tdx import TdxClient
 from astock.oms import OMS
+from astock.models import Side
 from astock.research import MarketPanel, factor_specs, select_symbols
 from astock.risk import RiskEngine, RiskLimits
 from astock.storage import Repository
 from astock.strategy import MomentumTrendStrategy
+
+
+PAPER_SLIPPAGE = Decimal("0.002")
 
 
 @dataclass(frozen=True)
@@ -115,11 +119,26 @@ class MultiStrategyPaperAccounts:
             risk = RiskEngine(RiskLimits(max_daily_orders=25))
             daily_order_count = 0
             for intent in intents:
+                reference = quotes[intent.symbol]
+                execution_price = (
+                    reference.ask_price * (Decimal("1") + PAPER_SLIPPAGE)
+                    if intent.side is Side.BUY
+                    else reference.bid_price * (Decimal("1") - PAPER_SLIPPAGE)
+                )
+                intent = replace(intent, limit_price=execution_price)
                 if risk.evaluate(intent, account, prices, daily_order_count).allowed:
                     oms.enqueue(intent)
                     daily_order_count += 1
             orders = oms.dispatch(quotes, trading_day, executed_at)
-            fills = [broker.match(order.client_order_id, quotes[order.symbol], executed_at) for order in orders]
+            fills = []
+            for order in orders:
+                quote = quotes[order.symbol]
+                execution_quote = (
+                    replace(quote, ask_price=quote.ask_price * (Decimal("1") + PAPER_SLIPPAGE))
+                    if order.side is Side.BUY
+                    else replace(quote, bid_price=quote.bid_price * (Decimal("1") - PAPER_SLIPPAGE))
+                )
+                fills.append(broker.match(order.client_order_id, execution_quote, executed_at))
             results.append(
                 {
                     "strategy": strategy,

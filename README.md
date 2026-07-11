@@ -36,4 +36,4 @@ python -m astock.cli paper-execute --env-file .env.demo
 
 `replay` 使用临时 SQLite 数据库执行策略、风控、OMS、模拟成交与逐日对账，不会触发真实交易，也不会改写正式账户数据。
 
-最新策略研究结论见 `docs/STRATEGY_RESEARCH_V2.md`。三个模拟策略使用完全隔离的 100000 元账户，另设一个 100000 元组合观察账户；它们目前都是待前向淘汰的候选，不是实盘策略。
+最新策略研究结论见 `docs/STRATEGY_RESEARCH_V3.md`。三个模拟策略使用完全隔离的 100000 元账户，另设一个 100000 元组合观察账户；它们目前都是待前向淘汰的候选，不是实盘策略。

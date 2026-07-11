@@ -9,7 +9,7 @@ from datetime import date, datetime
 
 import numpy as np
 
-from astock.research import MarketPanel, backtest, factor_specs, select_symbols
+from astock.research import MarketPanel, _wilder_rsi, backtest, factor_specs, select_symbols
 from astock.paper import MultiStrategyPaperAccounts
 
 
@@ -32,14 +32,20 @@ class ResearchCausalityCase(unittest.TestCase):
         panel = synthetic_panel()
         changed_close = panel.close.copy()
         changed_close[181:] = changed_close[181:, ::-1] * 100
+        changed_high = panel.high.copy()
+        changed_high[181:] *= 50
+        changed_low = panel.low.copy()
+        changed_low[181:] *= 0.1
+        changed_volume = panel.volume.copy()
+        changed_volume[181:] *= 100
         changed = MarketPanel(
             panel.dates,
             panel.symbols,
             panel.open,
-            panel.high,
-            panel.low,
+            changed_high,
+            changed_low,
             changed_close,
-            panel.volume,
+            changed_volume,
             panel.amount,
         )
         for spec in factor_specs():
@@ -53,6 +59,15 @@ class ResearchCausalityCase(unittest.TestCase):
         self.assertTrue(all(item.signal_date < item.execution_date for item in audit))
         self.assertTrue(performance.reconciled)
         self.assertEqual(len(curve), len(panel.dates))
+
+    def test_wilder_rsi_and_slippage_are_causal(self) -> None:
+        rising = np.arange(1, 32, dtype=np.float64)[:, None]
+        self.assertEqual(float(_wilder_rsi(rising)[0]), 100.0)
+        panel = synthetic_panel()
+        spec = factor_specs()[0]
+        low_cost, _, _ = backtest(panel, spec, "2025-01-01", "2025-09-17", slippage=0.001)
+        high_cost, _, _ = backtest(panel, spec, "2025-01-01", "2025-09-17", slippage=0.003)
+        self.assertLessEqual(high_cost.total_return, low_cost.total_return)
 
     def test_all_candidate_factors_are_finite_when_history_exists(self) -> None:
         panel = synthetic_panel()
