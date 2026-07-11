@@ -30,8 +30,6 @@ def synthetic_panel(days: int = 260, symbols: int = 8) -> MarketPanel:
 class ResearchCausalityCase(unittest.TestCase):
     def test_future_mutation_does_not_change_existing_signal(self) -> None:
         panel = synthetic_panel()
-        spec = factor_specs()[0]
-        original = select_symbols(panel, spec, 180).tolist()
         changed_close = panel.close.copy()
         changed_close[181:] = changed_close[181:, ::-1] * 100
         changed = MarketPanel(
@@ -44,7 +42,9 @@ class ResearchCausalityCase(unittest.TestCase):
             panel.volume,
             panel.amount,
         )
-        self.assertEqual(original, select_symbols(changed, spec, 180).tolist())
+        for spec in factor_specs():
+            original = select_symbols(panel, spec, 180).tolist()
+            self.assertEqual(original, select_symbols(changed, spec, 180).tolist(), spec.name)
 
     def test_every_execution_is_after_signal(self) -> None:
         panel = synthetic_panel()
@@ -56,7 +56,9 @@ class ResearchCausalityCase(unittest.TestCase):
 
     def test_all_candidate_factors_are_finite_when_history_exists(self) -> None:
         panel = synthetic_panel()
-        for spec in factor_specs():
+        specs = factor_specs()
+        self.assertEqual(len(specs), 15)
+        for spec in specs:
             selected = select_symbols(panel, spec, 180)
             self.assertLessEqual(len(selected), 5, spec.name)
             self.assertTrue(np.all(selected >= 0), spec.name)

@@ -18,7 +18,7 @@ from astock.replay import ReplayEngine
 from astock.risk import RiskEngine
 from astock.storage import Repository
 from astock.strategy import MomentumTrendStrategy
-from astock.research import MarketPanel, fetch_market_panel, run_research, write_report
+from astock.research import MarketPanel, fetch_market_panel, run_research, write_markdown_report, write_report
 from astock.paper import MultiStrategyPaperAccounts
 
 
@@ -82,11 +82,16 @@ def research(args: argparse.Namespace) -> int:
     result = run_research(panel)
     report_path = settings.data_dir / "reports" / "strategy_research.json"
     write_report(result, report_path)
+    v2_data_path = settings.data_dir / "research" / "strategy_research_v2.json"
+    write_report(result, v2_data_path)
+    v2_document_path = settings.data_dir.parent / "docs" / "STRATEGY_RESEARCH_V2.md"
+    write_markdown_report(result, v2_document_path)
     summary = {
         "symbols": len(panel.symbols),
         "trading_days": len(panel.dates),
         "selected": [item["strategy"] for item in result["selected"]],
         "report": str(report_path),
+        "v2_report": str(v2_document_path),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

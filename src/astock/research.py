@@ -112,6 +112,7 @@ ScoreFunction = Callable[[MarketPanel, int], np.ndarray]
 @dataclass(frozen=True)
 class FactorSpec:
     name: str
+    family: str
     description: str
     min_history: int
     scorer: ScoreFunction
@@ -140,6 +141,12 @@ def _nanstd(values: np.ndarray, axis: int = 0) -> np.ndarray:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         return np.nanstd(values, axis=axis)
+
+
+def _nanmedian(values: np.ndarray, axis: int = 0) -> np.ndarray:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmedian(values, axis=axis)
 
 
 def _masked(score: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -184,13 +191,99 @@ def factor_specs() -> tuple[FactorSpec, ...]:
             score = _return(panel, index, 120) / volatility
         return _masked(score, _trend_mask(panel, index))
 
+    def short_term_reversal(panel: MarketPanel, index: int) -> np.ndarray:
+        score = -(_return(panel, index, 5) + _return(panel, index, 10))
+        return _masked(score, _trend_mask(panel, index))
+
+    def bollinger_reversion(panel: MarketPanel, index: int) -> np.ndarray:
+        window = panel.close[index - 19 : index + 1]
+        average = _nanmean(window, axis=0)
+        deviation = _nanstd(window, axis=0)
+        lower = average - 2.0 * deviation
+        upper = average + 2.0 * deviation
+        returns = panel.close[index - 80 : index + 1][1:] / panel.close[index - 80 : index + 1][:-1] - 1.0
+        rolling_vol = np.stack([_nanstd(returns[offset : offset + 20], axis=0) for offset in range(61)])
+        expanding = rolling_vol[-1] > _nanmedian(rolling_vol[:-1], axis=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            score = -(panel.close[index] - lower) / (upper - lower)
+        return _masked(score, expanding & _trend_mask(panel, index))
+
+    def rsi_oversold_reversal(panel: MarketPanel, index: int) -> np.ndarray:
+        changes = np.diff(panel.close[index - 14 : index + 1], axis=0)
+        gains = _nanmean(np.where(changes > 0, changes, 0.0), axis=0)
+        losses = _nanmean(np.where(changes < 0, -changes, 0.0), axis=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rsi = 100.0 - 100.0 / (1.0 + gains / losses)
+        return _masked(-rsi, (rsi < 35.0) & _trend_mask(panel, index))
+
+    def volatility_contraction(panel: MarketPanel, index: int) -> np.ndarray:
+        closes = panel.close[index - 120 : index + 1]
+        returns = closes[1:] / closes[:-1] - 1.0
+        short_vol = _nanstd(returns[-20:], axis=0)
+        long_vol = _nanstd(returns, axis=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            score = -(short_vol / long_vol)
+        return _masked(score, _trend_mask(panel, index))
+
+    def upside_downside_volatility(panel: MarketPanel, index: int) -> np.ndarray:
+        closes = panel.close[index - 60 : index + 1]
+        returns = closes[1:] / closes[:-1] - 1.0
+        up_count = np.sum(returns > 0, axis=0)
+        down_count = np.sum(returns < 0, axis=0)
+        upside = _nanstd(np.where(returns > 0, returns, np.nan), axis=0)
+        downside = _nanstd(np.where(returns < 0, -returns, np.nan), axis=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            score = upside / downside
+        return _masked(score, (up_count >= 10) & (down_count >= 10) & _trend_mask(panel, index))
+
+    def multi_timeframe_momentum(panel: MarketPanel, index: int) -> np.ndarray:
+        returns = [_return(panel, index, window) for window in (10, 20, 60, 120)]
+        score = 0.4 * returns[0] + 0.3 * returns[1] + 0.2 * returns[2] + 0.1 * returns[3]
+        positive = np.logical_and.reduce([item > 0 for item in returns])
+        return _masked(score, positive)
+
+    def accelerating_momentum(panel: MarketPanel, index: int) -> np.ndarray:
+        recent = _return(panel, index, 20)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            previous = panel.close[index - 20] / panel.close[index - 40] - 1.0
+        return _masked(recent - previous, (recent > 0) & _trend_mask(panel, index))
+
+    def volume_confirmed_breakout(panel: MarketPanel, index: int) -> np.ndarray:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            previous_high = np.nanmax(panel.high[index - 120 : index], axis=0)
+        recent_volume = _nanmean(panel.volume[index - 4 : index + 1], axis=0)
+        baseline_volume = _nanmean(panel.volume[index - 59 : index + 1], axis=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            score = panel.close[index] / previous_high * np.log1p(recent_volume / baseline_volume)
+        return _masked(score, _return(panel, index, 60) > 0)
+
+    def volume_dry_up(panel: MarketPanel, index: int) -> np.ndarray:
+        volume = panel.volume[index - 4 : index + 1]
+        average_volume = _nanmean(volume, axis=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            volume_cv = _nanstd(volume, axis=0) / average_volume
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            range_width = (np.nanmax(panel.high[index - 19 : index + 1], axis=0) - np.nanmin(panel.low[index - 19 : index + 1], axis=0)) / panel.close[index]
+        return _masked(-volume_cv, (range_width < 0.12) & _trend_mask(panel, index))
+
     return (
-        FactorSpec("momentum_20_60", "20／60 日动量并要求站上 120 日均线", 121, momentum_20_60),
-        FactorSpec("momentum_120_ex5", "跳过最近 5 日的 120 日中期动量", 121, momentum_120_ex5),
-        FactorSpec("breakout_120", "接近 120 日新高且 60 日收益为正", 121, breakout_120),
-        FactorSpec("low_volatility_trend", "上升趋势中的低波动股票", 121, low_volatility_trend),
-        FactorSpec("volume_price_strength", "趋势中的 20 日量价强度", 121, volume_price_strength),
-        FactorSpec("risk_adjusted_momentum", "120 日收益除以 60 日波动率", 121, risk_adjusted_momentum),
+        FactorSpec("momentum_20_60", "trend", "20／60 日动量并要求站上 120 日均线", 121, momentum_20_60),
+        FactorSpec("momentum_120_ex5", "trend", "跳过最近 5 日的 120 日中期动量", 121, momentum_120_ex5),
+        FactorSpec("breakout_120", "trend", "接近 120 日新高且 60 日收益为正", 121, breakout_120),
+        FactorSpec("low_volatility_trend", "volatility", "上升趋势中的低波动股票", 121, low_volatility_trend),
+        FactorSpec("volume_price_strength", "volume", "趋势中的 20 日量价强度", 121, volume_price_strength),
+        FactorSpec("risk_adjusted_momentum", "trend", "120 日收益除以 60 日波动率", 121, risk_adjusted_momentum),
+        FactorSpec("short_term_reversal", "reversal", "趋势过滤后的 5／10 日短期反转", 121, short_term_reversal),
+        FactorSpec("bollinger_reversion", "reversal", "波动扩张时的布林下轨回归", 121, bollinger_reversion),
+        FactorSpec("rsi_oversold_reversal", "reversal", "趋势中的 14 日 RSI 超卖反转", 121, rsi_oversold_reversal),
+        FactorSpec("volatility_contraction", "volatility", "趋势中的 20／120 日波动率收缩", 121, volatility_contraction),
+        FactorSpec("upside_downside_volatility", "volatility", "上涨与下跌波动率强弱比", 121, upside_downside_volatility),
+        FactorSpec("multi_timeframe_momentum", "multi_cycle", "10／20／60／120 日动量共振", 121, multi_timeframe_momentum),
+        FactorSpec("accelerating_momentum", "multi_cycle", "最近 20 日相对前 20 日的动量加速", 121, accelerating_momentum),
+        FactorSpec("volume_confirmed_breakout", "volume", "五日放量确认的 120 日突破", 121, volume_confirmed_breakout),
+        FactorSpec("volume_dry_up", "volume", "趋势窄幅整理中的成交量收缩", 121, volume_dry_up),
     )
 
 
@@ -352,13 +445,14 @@ def backtest(
 
 def run_research(panel: MarketPanel) -> dict:
     periods = {
-        "research": ("2021-01-01", "2024-12-31"),
-        "validation": ("2025-01-01", "2025-12-31"),
-        "out_of_sample": ("2026-01-01", "2026-12-31"),
+        "research": ("2021-01-01", "2023-12-31"),
+        "validation_2024": ("2024-01-01", "2024-12-31"),
+        "validation_2025": ("2025-01-01", "2025-12-31"),
+        "stress_2026": ("2026-01-01", "2026-12-31"),
     }
     optimized: list[FactorSpec] = []
     for base in factor_specs():
-        best: tuple[float, FactorSpec] | None = None
+        grid: dict[tuple[int, int, float], tuple[FactorSpec, Performance, float]] = {}
         for top_n in (5, 10, 20):
             for rebalance_days in (10, 20, 40):
                 for breadth in (0.30, 0.40, 0.50):
@@ -370,11 +464,27 @@ def run_research(panel: MarketPanel) -> dict:
                     )
                     performance, _, _ = backtest(panel, candidate, *periods["research"])
                     score = performance.calmar + 0.25 * performance.sharpe
-                    if best is None or score > best[0]:
-                        best = (score, candidate)
-        if best is None:
+                    grid[(top_n, rebalance_days, breadth)] = (candidate, performance, score)
+        robust: list[tuple[float, FactorSpec]] = []
+        value_positions = ({5: 0, 10: 1, 20: 2}, {10: 0, 20: 1, 40: 2}, {0.30: 0, 0.40: 1, 0.50: 2})
+        for key, (candidate, performance, score) in grid.items():
+            if performance.trade_count < 30:
+                continue
+            neighbor_scores = [
+                item[2]
+                for other_key, item in grid.items()
+                if sum(left != right for left, right in zip(key, other_key, strict=True)) == 1
+                and sum(
+                    abs(mapping[left] - mapping[right])
+                    for mapping, left, right in zip(value_positions, key, other_key, strict=True)
+                ) == 1
+            ]
+            neighbor_median = float(np.median(neighbor_scores)) if neighbor_scores else score
+            robust.append((score + 0.25 * neighbor_median, candidate))
+        if not robust:
             raise RuntimeError(f"no research configuration for {base.name}")
-        optimized.append(best[1])
+        robust.sort(key=lambda item: item[0], reverse=True)
+        optimized.append(robust[0][1])
     results: list[Performance] = []
     audits: dict[str, int] = {}
     for spec in optimized:
@@ -385,12 +495,41 @@ def run_research(panel: MarketPanel) -> dict:
                 raise RuntimeError(f"causality violation in {spec.name} {period}")
             audits[f"{spec.name}:{period}"] = violations
             results.append(Performance(**{**asdict(performance), "period": period}))
-    validation = [item for item in results if item.period == "validation"]
-    validation.sort(key=lambda item: (item.calmar, item.sharpe, item.annual_return), reverse=True)
-    selected_names = [item.strategy for item in validation[:3]]
+    result_lookup = {(item.strategy, item.period): item for item in results}
+    ranked: list[tuple[float, FactorSpec]] = []
+    for spec in optimized:
+        first = result_lookup[(spec.name, "validation_2024")]
+        second = result_lookup[(spec.name, "validation_2025")]
+        if first.annual_return < 0 and second.annual_return < 0:
+            continue
+        if first.trade_count + second.trade_count < 20:
+            continue
+        score = np.mean([first.calmar + 0.25 * first.sharpe, second.calmar + 0.25 * second.sharpe])
+        score -= 0.25 * max(first.max_drawdown, second.max_drawdown)
+        ranked.append((float(score), spec))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    selected_specs: list[FactorSpec] = []
+    used_families: set[str] = set()
+    for _, spec in ranked:
+        if spec.family in used_families:
+            continue
+        selected_specs.append(spec)
+        used_families.add(spec.family)
+        if len(selected_specs) == 3:
+            break
+    if len(selected_specs) < 3:
+        for _, spec in ranked:
+            if spec not in selected_specs:
+                selected_specs.append(spec)
+            if len(selected_specs) == 3:
+                break
+    if len(selected_specs) < 3:
+        raise RuntimeError("fewer than three strategies passed dual-validation eligibility")
+    selected_names = [spec.name for spec in selected_specs]
     selected = [
         {
             "strategy": spec.name,
+            "family": spec.family,
             "description": spec.description,
             "top_n": spec.top_n,
             "rebalance_days": spec.rebalance_days,
@@ -400,10 +539,13 @@ def run_research(panel: MarketPanel) -> dict:
         if spec.name in selected_names
     ]
     selected.sort(key=lambda item: selected_names.index(item["strategy"]))
-    validation_by_name = {item.strategy: item for item in validation}
     for item in selected:
-        performance = validation_by_name[item["strategy"]]
-        item["validation_target_met"] = performance.annual_return >= 0.15 and performance.max_drawdown <= 0.15
+        first = result_lookup[(item["strategy"], "validation_2024")]
+        second = result_lookup[(item["strategy"], "validation_2025")]
+        item["validation_target_met"] = all(
+            performance.annual_return >= 0.15 and performance.max_drawdown <= 0.15
+            for performance in (first, second)
+        )
         item["status"] = "provisional_paper_candidate"
     return {
         "methodology": {
@@ -411,19 +553,31 @@ def run_research(panel: MarketPanel) -> dict:
             "target_annual_return": 0.15,
             "target_max_drawdown": 0.15,
             "signal_execution": "T close signal, T+1 open execution",
-            "rebalance": "every 20 trading days",
-            "optimization_rule": "each factor configuration selected by research Calmar + 0.25 * Sharpe",
-            "selection_rule": "top 3 frozen factors by validation Calmar, then Sharpe and annual return; OOS excluded from selection",
+            "rebalance": "optimized from 10, 20, or 40 trading days",
+            "optimization_rule": "research score plus 0.25 times median neighboring-parameter score; minimum 30 research trades",
+            "selection_rule": "2024 and 2025 validation composite score with drawdown penalty; prefer three distinct families",
             "parameter_grid": {"top_n": [5, 10, 20], "rebalance_days": [10, 20, 40], "minimum_market_breadth": [0.30, 0.40, 0.50]},
             "slippage": SLIPPAGE,
             "causality_violations": audits,
             "known_limitations": [
-                "current security list excludes previously delisted stocks and introduces survivorship bias",
-                "historical ST status is unavailable, so 5 percent ST price limits cannot be reconstructed exactly",
-                "daily bars approximate execution; 5-minute data is required for the next execution-quality validation",
+                "当前证券列表不含历史退市股票，存在幸存者偏差。",
+                "缺少历史 ST 状态，无法精确重建 5% 涨跌停限制。",
+                "日线只能近似成交，下一阶段必须使用 5 分钟数据验证执行质量。",
+                "此前研究已经观察过 2026 市场状态，因此 2026 只能作为压力测试，不能称为未观察样本。",
             ],
         },
         "selected": selected,
+        "optimized": [
+            {
+                "strategy": spec.name,
+                "family": spec.family,
+                "description": spec.description,
+                "top_n": spec.top_n,
+                "rebalance_days": spec.rebalance_days,
+                "minimum_market_breadth": spec.minimum_market_breadth,
+            }
+            for spec in optimized
+        ],
         "results": [asdict(item) for item in results],
     }
 
@@ -431,3 +585,61 @@ def run_research(panel: MarketPanel) -> dict:
 def write_report(result: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def write_markdown_report(result: dict, path: Path) -> None:
+    selected_names = {item["strategy"] for item in result["selected"]}
+    config_by_name = {item["strategy"]: item for item in result["optimized"]}
+    result_lookup = {(item["strategy"], item["period"]): item for item in result["results"]}
+    periods = ("research", "validation_2024", "validation_2025", "stress_2026")
+    lines = [
+        "# 三策略研究报告 V2",
+        "",
+        "## 结论",
+        "",
+        "V2 共评估 15 个因子、405 组研究期参数配置。最终三个策略仅用于前向模拟；2026 是压力测试，不是未观察样本。",
+        "",
+        "| 策略 | 家族 | 冻结配置 | 2024 年化／回撤 | 2025 年化／回撤 | 2026 压力年化／回撤 | 达标 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for selected in result["selected"]:
+        name = selected["strategy"]
+        first = result_lookup[(name, "validation_2024")]
+        second = result_lookup[(name, "validation_2025")]
+        stress = result_lookup[(name, "stress_2026")]
+        config = f"{selected['top_n']} 只／{selected['rebalance_days']} 日／宽度 {selected['minimum_market_breadth']:.0%}"
+        lines.append(
+            f"| {name} | {selected['family']} | {config} | {first['annual_return']:.2%}／{first['max_drawdown']:.2%} | "
+            f"{second['annual_return']:.2%}／{second['max_drawdown']:.2%} | {stress['annual_return']:.2%}／{stress['max_drawdown']:.2%} | "
+            f"{'是' if selected['validation_target_met'] else '否'} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 方法",
+            "",
+            "- 2021～2023：参数研究；2024、2025：双验证；2026：只作压力测试。",
+            "- 参数选择同时考虑研究得分和相邻参数中位数，研究期成交少于 30 笔的配置不得入选。",
+            "- 最终排名要求两个验证期不能同时亏损，并优先选择不同策略家族。",
+            "- T 日收盘生成信号，T＋1 开盘后成交；未来函数审计违规数为 0。",
+            "- 初始资金 100000 元，计入佣金、印花税、过户费、10BP 单边滑点及一字板不可成交。",
+            "",
+            "## 全部冻结因子表现",
+            "",
+            "| 因子 | 家族 | 区间 | 年化 | 最大回撤 | Sharpe | Calmar | 换手 | 成本 | 成交数 |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for config in sorted(result["optimized"], key=lambda item: (item["family"], item["strategy"])):
+        name = config["strategy"]
+        display = f"**{name}**" if name in selected_names else name
+        for period in periods:
+            item = result_lookup[(name, period)]
+            lines.append(
+                f"| {display} | {config['family']} | {period} | {item['annual_return']:.2%} | {item['max_drawdown']:.2%} | "
+                f"{item['sharpe']:.2f} | {item['calmar']:.2f} | {item['turnover']:.1f} | {item['transaction_cost']:.0f} | {item['trade_count']} |"
+            )
+    lines.extend(["", "## 已知限制", ""])
+    lines.extend(f"- {item}" for item in result["methodology"]["known_limitations"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
