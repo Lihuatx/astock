@@ -2,7 +2,7 @@
 
 ## 项目目标
 
-构建面向个人研究的 A 股模拟交易系统。当前阶段只交付 P0～P3：项目治理、数据管线、A 股仿真 Broker、策略／风控／OMS／账本与历史回放。
+构建面向个人研究的 A 股模拟交易系统。P0～P3 已完成，当前追加 P4：观测事实、复盘快照、Windows runner、只读 Dashboard、私网同步、备份与驻留化。
 
 ## 固定边界
 
@@ -36,13 +36,21 @@
 - `.env*`、数据库、日志、备份、原始行情和报告不得提交 Git。
 - `.env.demo` 是本机真实配置文件，代码可在运行时加载，开发和汇报不得读取或回显其值。
 - 所有凭据只通过环境变量进入进程。
-- Dashboard、服务化和计划任务属于 P4，本阶段不实施。
+- Dashboard 只允许展示和复盘，不得提供下单、撤单、修改资金、切换策略或触发模拟执行的入口。
+- Dashboard 通过 Tailscale 私网访问，首版不开放公网端口、不配置公网域名、不依赖 Cloudflare。
+- Windows 本机账户 SQLite／Ledger 是交易权威事实源；服务器只保存不可变 `ReviewBundle`、`LiveStatus` 和查询索引。
+- 同步失败不得阻断本地模拟交易；行情过期、订单未知或账实不符仍必须 fail closed。
+- 自动模拟执行默认关闭，完成 5 分钟成交复核和首次调仓验收后才允许单独启用。
 
 ## 工程约定
 
 - Python 3.13，源代码位于 `src/astock`，测试位于 `tests`。
+- P4 目录固定为：`src/astock/observability` 保存审计、快照、Bundle 和同步；`src/astock/dashboard` 保存 FastAPI 与服务端查询；`web` 保存 React／TypeScript／Vite；`deploy` 保存 Docker Compose、部署和备份脚本。
+- 前端使用 Node.js 22；生产环境由 FastAPI 同源提供 API 和已构建静态资源。
 - 金额、价格、费用统一使用 `Decimal`；时间统一使用带 `Asia/Shanghai` 时区的 `datetime`。
 - SQLite 使用 WAL、外键和单写者；订单写入 Outbox 后才允许交给 Broker。
+- `ReviewBundle` 是不可变发布快照，前端、离线报告和后续公开内容不得各自重新计算交易指标。
+- 浏览器缓存只能保存主题等非权威偏好，不得保存账户、信号、订单或健康状态的权威副本。
 - 外部 API 必须有超时、有限重试、原始响应落地和明确错误分类。
 - 行情过期、订单未知、账实不符时必须 fail closed，停止创建新订单。
 - 修改后运行与改动风险相称的测试，并同步更新 `ROADMAP.md`。
