@@ -13,6 +13,6 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir .
 COPY --from=web-build /build/web/dist ./web/dist
 COPY --from=web-build /build/web/report-dist ./web/report-dist
-EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"
-CMD ["python", "-m", "astock.cli", "dashboard", "--port", "8080"]
+EXPOSE 18080
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/healthz', timeout=3)"
+CMD ["python", "-m", "astock.cli", "dashboard", "--port", "18080"]

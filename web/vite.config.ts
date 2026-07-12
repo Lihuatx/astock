@@ -5,8 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/api": { target: "http://127.0.0.1:8080", headers: { "Tailscale-User-Login": "local@example.com" } },
-      "/healthz": "http://127.0.0.1:8080",
+      "/api": { target: "http://127.0.0.1:18080", headers: { "Tailscale-User-Login": "local@example.com" } },
+      "/healthz": "http://127.0.0.1:18080",
     },
   },
 });

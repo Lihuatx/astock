@@ -7,4 +7,4 @@ if [ "$#" -eq 1 ]; then
 fi
 docker compose pull
 docker compose up -d
-docker compose exec -T dashboard python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"
+docker compose exec -T dashboard python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/healthz', timeout=5)"
