@@ -13,6 +13,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "numpy>=2.2,<3",
   "requests>=2.32,<3",
+  "tzdata>=2025.2; platform_system == 'Windows'",
   "uvicorn>=0.35,<1",
 ]
 
