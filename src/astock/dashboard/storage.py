@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from astock.observability.bundle import validate_review_bundle
+from astock.observability.bundle import canonical_json, validate_live_status, validate_review_bundle
 
 
 SCHEMA_VERSION = 1
@@ -22,10 +23,12 @@ class DashboardStore:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA foreign_keys=ON")
+        self._lock = threading.RLock()
         self._create_schema()
 
     def close(self) -> None:
-        self.connection.close()
+        with self._lock:
+            self.connection.close()
 
     def _create_schema(self) -> None:
         self.connection.executescript(
@@ -77,10 +80,14 @@ class DashboardStore:
         self.connection.commit()
 
     def save_bundle(self, bundle: dict[str, Any], received_at: datetime) -> bool:
+        with self._lock:
+            return self._save_bundle(bundle, received_at)
+
+    def _save_bundle(self, bundle: dict[str, Any], received_at: datetime) -> bool:
         validate_review_bundle(bundle)
         target = self.bundle_root / bundle["trading_day"] / f"{bundle['bundle_id']}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
-        encoded = json.dumps(bundle, ensure_ascii=False, indent=2)
+        encoded = canonical_json(bundle)
         existing = self.connection.execute(
             "SELECT content_sha256,path FROM bundles WHERE bundle_id=?", (bundle["bundle_id"],)
         ).fetchone()
@@ -88,7 +95,7 @@ class DashboardStore:
             if existing["content_sha256"] != bundle["content_sha256"]:
                 raise ValueError("bundle id already exists with different content")
             return False
-        target.write_text(encoded, encoding="utf-8")
+        target.write_bytes(encoded)
         with self.connection:
             self.connection.execute(
                 "INSERT INTO bundles VALUES(?,?,?,?,?,?,?)",
@@ -109,30 +116,39 @@ class DashboardStore:
         return True
 
     def bundles(self) -> list[dict[str, Any]]:
-        return [
-            dict(row)
-            for row in self.connection.execute(
+        with self._lock:
+            return [dict(row) for row in self.connection.execute(
                 "SELECT bundle_id,trading_day,content_sha256,strategy_set_id,generated_at,received_at "
                 "FROM bundles ORDER BY trading_day DESC,received_at DESC"
-            )
-        ]
+            )]
 
     def load_bundle(self, bundle_id: str) -> dict[str, Any] | None:
-        row = self.connection.execute("SELECT path FROM bundles WHERE bundle_id=?", (bundle_id,)).fetchone()
-        if not row:
-            return None
-        return json.loads(Path(row["path"]).read_text(encoding="utf-8"))
+        with self._lock:
+            row = self.connection.execute("SELECT path FROM bundles WHERE bundle_id=?", (bundle_id,)).fetchone()
+            if not row:
+                return None
+            return json.loads(Path(row["path"]).read_text(encoding="utf-8"))
 
     def latest_bundle(self) -> dict[str, Any] | None:
-        row = self.connection.execute(
-            "SELECT bundle_id FROM bundles ORDER BY trading_day DESC,received_at DESC LIMIT 1"
-        ).fetchone()
-        return self.load_bundle(row["bundle_id"]) if row else None
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT bundle_id FROM bundles ORDER BY trading_day DESC,received_at DESC LIMIT 1"
+            ).fetchone()
+            return self.load_bundle(row["bundle_id"]) if row else None
 
     def save_live_status(self, source_id: str, payload: dict[str, Any], received_at: datetime) -> None:
-        if payload.get("schema_version") != SCHEMA_VERSION or payload.get("source_id") != source_id:
+        validate_live_status(payload)
+        if payload.get("source_id") != source_id:
             raise ValueError("invalid live status")
-        with self.connection:
+        with self._lock, self.connection:
+            receipt_id = f"status:{payload['status_id']}"
+            receipt = self.connection.execute(
+                "SELECT object_id FROM ingest_receipts WHERE receipt_id=?", (receipt_id,)
+            ).fetchone()
+            if receipt:
+                if receipt["object_id"] != source_id:
+                    raise ValueError("live status id already exists with different source")
+                return
             self.connection.execute(
                 """INSERT INTO live_status VALUES(?,?,?,?)
                    ON CONFLICT(source_id) DO UPDATE SET
@@ -140,8 +156,8 @@ class DashboardStore:
                 (source_id, payload["generated_at"], received_at.isoformat(), _json(payload)),
             )
             self.connection.execute(
-                "INSERT OR IGNORE INTO ingest_receipts VALUES(?,?,?,?)",
-                (f"status:{source_id}:{payload['generated_at']}", "LIVE_STATUS", source_id, received_at.isoformat()),
+                "INSERT INTO ingest_receipts VALUES(?,?,?,?)",
+                (receipt_id, "LIVE_STATUS", source_id, received_at.isoformat()),
             )
             self._replace_alerts(source_id, payload.get("alerts", []), received_at)
 
@@ -177,25 +193,25 @@ class DashboardStore:
                 )
 
     def live_statuses(self) -> list[dict[str, Any]]:
-        result = []
-        for row in self.connection.execute("SELECT * FROM live_status ORDER BY source_id"):
-            item = json.loads(row["payload"])
-            item["received_at"] = row["received_at"]
-            result.append(item)
-        return result
+        with self._lock:
+            result = []
+            for row in self.connection.execute("SELECT * FROM live_status ORDER BY source_id"):
+                item = json.loads(row["payload"])
+                item["received_at"] = row["received_at"]
+                result.append(item)
+            return result
 
     def alerts(self) -> list[dict[str, Any]]:
-        return [
-            dict(row)
-            for row in self.connection.execute(
+        with self._lock:
+            return [dict(row) for row in self.connection.execute(
                 "SELECT alert_id,source_id,code,severity,message,status,first_seen_at,last_seen_at "
                 "FROM alerts ORDER BY status, CASE severity WHEN 'CRITICAL' THEN 0 WHEN 'WARNING' THEN 1 ELSE 2 END, last_seen_at DESC"
-            )
-        ]
+            )]
 
     def effective_alerts(self, now: datetime) -> list[dict[str, Any]]:
         alerts = self.alerts()
-        rows = self.connection.execute("SELECT source_id,received_at FROM live_status ORDER BY source_id").fetchall()
+        with self._lock:
+            rows = self.connection.execute("SELECT source_id,received_at FROM live_status ORDER BY source_id").fetchall()
         if not rows:
             alerts.insert(
                 0,
@@ -230,11 +246,12 @@ class DashboardStore:
 
     def backup(self, target: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
-        destination = sqlite3.connect(target)
-        try:
-            self.connection.backup(destination)
-        finally:
-            destination.close()
+        with self._lock:
+            destination = sqlite3.connect(target)
+            try:
+                self.connection.backup(destination)
+            finally:
+                destination.close()
 
 
 def _json(value: Any) -> str:

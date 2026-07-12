@@ -30,8 +30,8 @@ class Runner:
         self.env_file = env_file
         self.observability = ObservabilityRepository(settings.data_dir / "observability" / "observability.db")
         self.owner_id = uuid.uuid4().hex
-        self.live_path = settings.data_dir / "observability" / "live-status.json"
-        self.live_path.parent.mkdir(parents=True, exist_ok=True)
+        self.live_root = settings.data_dir / "observability" / "live-status"
+        self.live_root.mkdir(parents=True, exist_ok=True)
 
     def close(self) -> None:
         self.observability.close()
@@ -187,8 +187,13 @@ class Runner:
             sync={"pending": pending},
             alerts=self._alerts(),
         )
-        self.live_path.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.observability.enqueue_sync("LIVE_STATUS", self.settings.source_id, self.live_path, now)
+        live_path = self.live_root / now.date().isoformat() / f"{status['status_id']}.json"
+        live_path.parent.mkdir(parents=True, exist_ok=True)
+        encoded = json.dumps(status, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        if live_path.exists() and live_path.read_text(encoding="utf-8") != encoded:
+            raise ValueError("immutable live status already exists with different content")
+        live_path.write_text(encoded, encoding="utf-8")
+        self.observability.enqueue_sync("LIVE_STATUS", status["status_id"], live_path, now)
         if self.settings.sync_base_url and self.settings.sync_token:
             dispatch_sync(
                 self.observability,

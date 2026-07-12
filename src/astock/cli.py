@@ -31,6 +31,7 @@ from astock.observability.runner import Runner
 from astock.observability.snapshot import initialize_observation_set
 from astock.observability.report import build_offline_report
 from astock.dashboard.storage import DashboardStore
+from astock.dashboard.backup import create_backup
 
 
 def _settings(args: argparse.Namespace) -> Settings:
@@ -379,8 +380,10 @@ def dashboard_backup(args: argparse.Namespace) -> int:
     settings = _settings(args)
     server_root = Path(os.getenv("ASTOCK_SERVER_DATA_DIR", settings.data_dir / "server")).resolve()
     store = DashboardStore(server_root / "server.db", server_root / "bundles")
-    store.backup(args.target)
-    store.close()
+    try:
+        create_backup(store, args.target)
+    finally:
+        store.close()
     print(json.dumps({"backup": str(args.target.resolve())}, ensure_ascii=False))
     return 0
 
@@ -442,10 +445,10 @@ def build_parser() -> argparse.ArgumentParser:
     runner_parser.add_argument("--env-file", type=Path)
     runner_parser.set_defaults(handler=runner_command)
     dashboard_parser = subparsers.add_parser("dashboard", help="启动私有只读 Dashboard")
-    dashboard_parser.add_argument("--port", type=int, default=8080)
+    dashboard_parser.add_argument("--port", type=int, default=18080)
     dashboard_parser.add_argument("--env-file", type=Path)
     dashboard_parser.set_defaults(handler=dashboard_command)
-    backup_parser = subparsers.add_parser("dashboard-backup", help="使用 SQLite online backup 备份 Dashboard 索引")
+    backup_parser = subparsers.add_parser("dashboard-backup", help="备份 Dashboard 索引、Bundle 和 SHA256 清单")
     backup_parser.add_argument("--target", type=Path, required=True)
     backup_parser.add_argument("--env-file", type=Path)
     backup_parser.set_defaults(handler=dashboard_backup)

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from astock.dashboard.app import create_app
 from astock.dashboard.storage import DashboardStore
+from astock.dashboard.backup import create_backup, restore_backup, verify_backup
 from astock.observability.bundle import build_live_status, build_review_bundle, validate_review_bundle, write_review_bundle
 from astock.observability.repository import ObservabilityRepository, SCHEMA_VERSION
 from astock.observability.report import build_offline_report
@@ -62,11 +63,24 @@ class ObservabilityCase(unittest.TestCase):
             self.assertEqual(path, write_review_bundle(second, root / "bundles"))
             later = dict(second)
             later["generated_at"] = "2026-07-12T17:00:00+08:00"
-            self.assertEqual(path, write_review_bundle(later, root / "bundles"))
+            with self.assertRaises(ValueError):
+                write_review_bundle(later, root / "bundles")
             altered = dict(first)
             altered["health"] = {"tdx": "bad"}
             with self.assertRaises(ValueError):
                 validate_review_bundle(altered)
+            repository.close()
+
+    def test_conflicting_idempotent_writes_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            repository = ObservabilityRepository(Path(folder) / "observability.db")
+            repository.register_strategy_set("set-demo", "a" * 64, "abc", {}, NOW)
+            repository.register_strategy_set("set-demo", "a" * 64, "abc", {}, NOW)
+            with self.assertRaises(ValueError):
+                repository.register_strategy_set("set-demo", "b" * 64, "abc", {}, NOW)
+            repository.append_event("ORDER", NOW, {"status": "NEW"}, event_id="order-1")
+            with self.assertRaises(ValueError):
+                repository.append_event("ORDER", NOW, {"status": "FILLED"}, event_id="order-1")
             repository.close()
 
     def test_decimal_snapshot_and_reconciliation(self) -> None:
@@ -231,9 +245,39 @@ class DashboardApiCase(unittest.TestCase):
                     ).status_code,
                     200,
                 )
+                self.assertTrue(status["status_id"].startswith("status-"))
+                changed = dict(status)
+                changed["runner"] = {"status": "OFFLINE"}
+                self.assertEqual(
+                    client.put(
+                        "/api/v1/ingest/live-status/windows-primary",
+                        json=changed,
+                        headers={"Authorization": "Bearer secret"},
+                    ).status_code,
+                    400,
+                )
                 overview = client.get("/api/v1/overview", headers=headers).json()
                 self.assertEqual(overview["bundle"]["bundle_id"], bundle["bundle_id"])
                 self.assertIn("TEST", [item["code"] for item in overview["alerts"]])
+
+    def test_static_assets_require_tailscale_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            static = root / "web"
+            (static / "assets").mkdir(parents=True)
+            (static / "index.html").write_text("index", encoding="utf-8")
+            (static / "assets" / "app.js").write_text("app", encoding="utf-8")
+            app = create_app(
+                data_dir=root / "data", static_dir=static,
+                allowed_users={"yancey@example.com"}, ingest_token="secret",
+            )
+            with TestClient(app) as client:
+                self.assertEqual(client.get("/assets/app.js").status_code, 403)
+                response = client.get(
+                    "/assets/app.js", headers={"Tailscale-User-Login": "yancey@example.com"}
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.text, "app")
 
     def test_online_backup_restores_bundle_index(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
@@ -245,6 +289,23 @@ class DashboardApiCase(unittest.TestCase):
             store.close()
             restored = DashboardStore(backup, root / "restored-bundles")
             self.assertEqual(restored.bundles()[0]["bundle_id"], sample_bundle()["bundle_id"])
+            restored.close()
+
+    def test_complete_backup_has_hash_manifest_and_restores_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = DashboardStore(root / "live" / "server.db", root / "live" / "bundles")
+            store.save_bundle(sample_bundle(), NOW)
+            target = create_backup(store, root / "backup")
+            store.close()
+            result = verify_backup(target)
+            self.assertEqual(result["bundles"], 1)
+            self.assertGreaterEqual(result["files"], 2)
+            restored_root = root / "restored"
+            restored_result = restore_backup(target, restored_root)
+            self.assertEqual(restored_result["bundles"], 1)
+            restored = DashboardStore(restored_root / "server.db", restored_root / "bundles")
+            self.assertEqual(restored.load_bundle(sample_bundle()["bundle_id"])["content_sha256"], sample_bundle()["content_sha256"])
             restored.close()
 
     def test_runner_becomes_offline_after_ninety_seconds(self) -> None:

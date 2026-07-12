@@ -126,11 +126,15 @@ class ObservabilityRepository:
         created_at: datetime,
         status: str = "OBSERVATION",
     ) -> None:
-        self.connection.execute(
-            """INSERT OR IGNORE INTO strategy_sets
+        values = (strategy_set_id, report_sha256, git_sha, status, _json(payload), created_at.isoformat())
+        self._insert_exact(
+            "strategy_sets",
+            "strategy_set_id",
+            strategy_set_id,
+            """INSERT INTO strategy_sets
                (strategy_set_id, report_sha256, git_sha, status, payload, created_at)
                VALUES(?,?,?,?,?,?)""",
-            (strategy_set_id, report_sha256, git_sha, status, _json(payload), created_at.isoformat()),
+            values,
         )
         self.connection.commit()
 
@@ -156,20 +160,18 @@ class ObservabilityRepository:
         strategy_set_id: str | None = None,
         status: str = "CURRENT",
     ) -> None:
-        self.connection.execute(
-            """INSERT OR IGNORE INTO account_registry
+        values = (
+            account_id, strategy_set_id, strategy, generation, str(db_path), str(initial_cash),
+            status, created_at.isoformat(),
+        )
+        self._insert_exact(
+            "account_registry",
+            "account_id",
+            account_id,
+            """INSERT INTO account_registry
                (account_id, strategy_set_id, strategy, generation, db_path, initial_cash, status, created_at)
                VALUES(?,?,?,?,?,?,?,?)""",
-            (
-                account_id,
-                strategy_set_id,
-                strategy,
-                generation,
-                str(db_path),
-                str(initial_cash),
-                status,
-                created_at.isoformat(),
-            ),
+            values,
         )
         self.connection.commit()
 
@@ -232,9 +234,11 @@ class ObservabilityRepository:
         run_id: str | None = None,
         account_id: str | None = None,
     ) -> str:
-        event_id = event_id or uuid.uuid4().hex
-        self.connection.execute(
-            "INSERT OR IGNORE INTO audit_events VALUES(?,?,?,?,?,?)",
+        raw_id = event_id or uuid.uuid4().hex
+        event_id = f"{account_id}:{raw_id}" if account_id and not raw_id.startswith(f"{account_id}:") else raw_id
+        self._insert_exact(
+            "audit_events", "event_id", event_id,
+            "INSERT INTO audit_events VALUES(?,?,?,?,?,?)",
             (event_id, run_id, account_id, event_type, occurred_at.isoformat(), _json(payload)),
         )
         self.connection.commit()
@@ -255,25 +259,19 @@ class ObservabilityRepository:
         return result
 
     def save_snapshot(self, snapshot: dict[str, Any]) -> None:
-        self.connection.execute(
-            """INSERT OR IGNORE INTO account_snapshots
+        values = (
+            snapshot["snapshot_id"], snapshot["account_id"], snapshot["trading_day"], snapshot["captured_at"],
+            str(snapshot["cash"]), str(snapshot["frozen_cash"]), str(snapshot["market_value"]),
+            str(snapshot["equity"]), str(snapshot.get("fees", "0")), str(snapshot.get("drawdown", "0")),
+            _json(snapshot.get("positions", {})), int(bool(snapshot["reconciliation_ok"])),
+        )
+        self._insert_exact(
+            "account_snapshots", "snapshot_id", snapshot["snapshot_id"],
+            """INSERT INTO account_snapshots
                (snapshot_id,account_id,trading_day,captured_at,cash,frozen_cash,market_value,equity,
                 fees,drawdown,positions,reconciliation_ok)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                snapshot["snapshot_id"],
-                snapshot["account_id"],
-                snapshot["trading_day"],
-                snapshot["captured_at"],
-                str(snapshot["cash"]),
-                str(snapshot["frozen_cash"]),
-                str(snapshot["market_value"]),
-                str(snapshot["equity"]),
-                str(snapshot.get("fees", "0")),
-                str(snapshot.get("drawdown", "0")),
-                _json(snapshot.get("positions", {})),
-                int(bool(snapshot["reconciliation_ok"])),
-            ),
+            values,
         )
         self.connection.commit()
 
@@ -300,21 +298,22 @@ class ObservabilityRepository:
         next_attempt_at: datetime,
     ) -> None:
         outbox_id = f"{object_type}:{object_id}"
+        values = (
+            outbox_id, object_type, object_id, str(payload_path), next_attempt_at.isoformat(),
+            datetime.now().astimezone().isoformat(),
+        )
+        existing = self.connection.execute(
+            "SELECT object_type,object_id,payload_path FROM sync_outbox WHERE outbox_id=?", (outbox_id,)
+        ).fetchone()
+        if existing:
+            if (existing["object_type"], existing["object_id"], existing["payload_path"]) != values[1:4]:
+                raise ValueError(f"sync_outbox key {outbox_id!r} already has different payload")
+            return
         self.connection.execute(
             """INSERT INTO sync_outbox
                (outbox_id,object_type,object_id,payload_path,next_attempt_at,created_at)
-               VALUES(?,?,?,?,?,?)
-               ON CONFLICT(outbox_id) DO UPDATE SET
-               payload_path=excluded.payload_path,status='PENDING',next_attempt_at=excluded.next_attempt_at,
-               last_error=NULL,sent_at=NULL""",
-            (
-                outbox_id,
-                object_type,
-                object_id,
-                str(payload_path),
-                next_attempt_at.isoformat(),
-                datetime.now().astimezone().isoformat(),
-            ),
+               VALUES(?,?,?,?,?,?)""",
+            values,
         )
         self.connection.commit()
 
@@ -353,6 +352,18 @@ class ObservabilityRepository:
             (error, next_attempt_at.isoformat(), outbox_id),
         )
         self.connection.commit()
+
+    def _insert_exact(
+        self, table: str, key_column: str, key: str, sql: str, values: tuple[Any, ...]
+    ) -> None:
+        existing = self.connection.execute(
+            f"SELECT * FROM {table} WHERE {key_column}=?", (key,)
+        ).fetchone()
+        if existing:
+            if tuple(existing) != values:
+                raise ValueError(f"{table} key {key!r} already has different payload")
+            return
+        self.connection.execute(sql, values)
 
 
 def _json(value: Any) -> str:

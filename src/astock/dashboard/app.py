@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from astock.dashboard.storage import DashboardStore
 
@@ -30,14 +29,18 @@ def create_app(
         item.strip() for item in os.getenv("ASTOCK_ALLOWED_TAILSCALE_USERS", "").split(",") if item.strip()
     }
     token = ingest_token if ingest_token is not None else os.getenv("ASTOCK_SYNC_TOKEN", "")
-    store = DashboardStore(root / "server.db", root / "bundles")
     @asynccontextmanager
-    async def lifespan(_: FastAPI):
-        yield
-        store.close()
+    async def lifespan(application: FastAPI):
+        application.state.store = DashboardStore(root / "server.db", root / "bundles")
+        try:
+            yield
+        finally:
+            application.state.store.close()
 
     app = FastAPI(title="astock private dashboard", docs_url=None, redoc_url=None, lifespan=lifespan)
-    app.state.store = store
+
+    def store(request: Request) -> DashboardStore:
+        return request.app.state.store
 
     def require_browser_user(tailscale_user_login: str | None = Header(default=None)) -> str:
         if not tailscale_user_login or tailscale_user_login not in allowed:
@@ -59,7 +62,7 @@ def create_app(
         if bundle.get("bundle_id") != bundle_id:
             raise HTTPException(status_code=400, detail="bundle path id mismatch")
         try:
-            created = store.save_bundle(bundle, datetime.now(SHANGHAI))
+            created = store(request).save_bundle(bundle, datetime.now(SHANGHAI))
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"ok": True, "created": created}
@@ -68,7 +71,7 @@ def create_app(
     async def ingest_status(source_id: str, request: Request) -> dict[str, bool]:
         payload = await request.json()
         try:
-            store.save_live_status(source_id, payload, datetime.now(SHANGHAI))
+            store(request).save_live_status(source_id, payload, datetime.now(SHANGHAI))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True}
@@ -76,62 +79,60 @@ def create_app(
     browser = [Depends(require_browser_user)]
 
     @app.get("/api/v1/overview", dependencies=browser)
-    def overview() -> dict:
-        bundle = store.latest_bundle()
+    def overview(request: Request) -> dict:
+        current = store(request)
+        bundle = current.latest_bundle()
         now = datetime.now(SHANGHAI)
         return {
             "bundle": bundle,
-            "live_status": store.live_statuses(),
-            "alerts": store.effective_alerts(now),
+            "live_status": current.live_statuses(),
+            "alerts": current.effective_alerts(now),
         }
 
     @app.get("/api/v1/accounts", dependencies=browser)
-    def accounts() -> list[dict]:
-        bundle = store.latest_bundle()
+    def accounts(request: Request) -> list[dict]:
+        bundle = store(request).latest_bundle()
         return bundle.get("accounts", []) if bundle else []
 
     @app.get("/api/v1/accounts/{account_id}", dependencies=browser)
-    def account(account_id: str) -> dict:
-        bundle = store.latest_bundle()
+    def account(account_id: str, request: Request) -> dict:
+        bundle = store(request).latest_bundle()
         for item in bundle.get("accounts", []) if bundle else []:
             if item.get("account_id") == account_id:
                 return item
         raise HTTPException(status_code=404, detail="account not found")
 
     @app.get("/api/v1/strategies", dependencies=browser)
-    def strategies() -> dict:
-        bundle = store.latest_bundle()
+    def strategies(request: Request) -> dict:
+        bundle = store(request).latest_bundle()
         return bundle.get("strategy_set", {}) if bundle else {}
 
     @app.get("/api/v1/orders", dependencies=browser)
-    def orders() -> list[dict]:
-        bundle = store.latest_bundle()
+    def orders(request: Request) -> list[dict]:
+        bundle = store(request).latest_bundle()
         return bundle.get("orders", []) if bundle else []
 
     @app.get("/api/v1/reviews", dependencies=browser)
-    def reviews() -> list[dict]:
-        return store.bundles()
+    def reviews(request: Request) -> list[dict]:
+        return store(request).bundles()
 
     @app.get("/api/v1/reviews/{bundle_id}", dependencies=browser)
-    def review(bundle_id: str) -> dict:
-        bundle = store.load_bundle(bundle_id)
+    def review(bundle_id: str, request: Request) -> dict:
+        bundle = store(request).load_bundle(bundle_id)
         if not bundle:
             raise HTTPException(status_code=404, detail="review bundle not found")
         return bundle
 
     @app.get("/api/v1/health", dependencies=browser)
-    def health() -> dict:
-        return {"sources": store.live_statuses(), "alerts": store.effective_alerts(datetime.now(SHANGHAI))}
+    def health(request: Request) -> dict:
+        current = store(request)
+        return {"sources": current.live_statuses(), "alerts": current.effective_alerts(datetime.now(SHANGHAI))}
 
     @app.get("/api/v1/alerts", dependencies=browser)
-    def alerts() -> list[dict]:
-        return store.effective_alerts(datetime.now(SHANGHAI))
+    def alerts(request: Request) -> list[dict]:
+        return store(request).effective_alerts(datetime.now(SHANGHAI))
 
     if static.exists():
-        assets = static / "assets"
-        if assets.exists():
-            app.mount("/assets", StaticFiles(directory=assets), name="assets")
-
         @app.get("/{path:path}", dependencies=browser)
         def spa(path: str) -> FileResponse:
             candidate = static / path

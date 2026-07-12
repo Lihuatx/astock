@@ -58,6 +58,7 @@ def build_review_bundle(
 ) -> dict[str, Any]:
     facts = {
         "trading_day": trading_day,
+        "generated_at": generated_at.isoformat(),
         "git_sha": git_sha,
         "data_cutoff": data_cutoff,
         "report_sha256": report_sha256,
@@ -80,7 +81,6 @@ def build_review_bundle(
         "schema_version": SCHEMA_VERSION,
         "bundle_id": f"review-{trading_day}-{content_hash[:16]}",
         "content_sha256": content_hash,
-        "generated_at": generated_at.isoformat(),
         **facts,
     }
 
@@ -91,7 +91,7 @@ def validate_review_bundle(bundle: dict[str, Any]) -> None:
     facts = {
         key: value
         for key, value in bundle.items()
-        if key not in {"schema_version", "bundle_id", "content_sha256", "generated_at"}
+        if key not in {"schema_version", "bundle_id", "content_sha256"}
     }
     actual = review_bundle_content_hash(facts)
     if actual != bundle.get("content_sha256"):
@@ -105,14 +105,15 @@ def write_review_bundle(bundle: dict[str, Any], root: Path) -> Path:
     validate_review_bundle(bundle)
     target = root / bundle["trading_day"] / f"{bundle['bundle_id']}.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    encoded = json.dumps(bundle, ensure_ascii=False, indent=2, default=str)
+    encoded = canonical_json(bundle)
     if target.exists():
-        existing = json.loads(target.read_text(encoding="utf-8"))
+        existing_bytes = target.read_bytes()
+        existing = json.loads(existing_bytes)
         validate_review_bundle(existing)
-        if existing["content_sha256"] != bundle["content_sha256"]:
+        if existing_bytes != encoded:
             raise ValueError("immutable review bundle already exists with different content")
         return target
-    target.write_text(encoded, encoding="utf-8")
+    target.write_bytes(encoded)
     return target
 
 
@@ -126,7 +127,7 @@ def build_live_status(
     sync: dict[str, Any],
     alerts: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return {
+    facts = {
         "schema_version": SCHEMA_VERSION,
         "source_id": source_id,
         "generated_at": generated_at.isoformat(),
@@ -136,3 +137,13 @@ def build_live_status(
         "sync": sync,
         "alerts": alerts,
     }
+    return {"status_id": f"status-{sha256_bytes(canonical_json(facts))[:24]}", **facts}
+
+
+def validate_live_status(status: dict[str, Any]) -> None:
+    if status.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("unsupported live status schema")
+    facts = {key: value for key, value in status.items() if key != "status_id"}
+    expected = f"status-{sha256_bytes(canonical_json(facts))[:24]}"
+    if status.get("status_id") != expected:
+        raise ValueError("live status id mismatch")
