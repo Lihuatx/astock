@@ -21,6 +21,10 @@ from astock.strategy import MomentumTrendStrategy
 from astock.research import MarketPanel, fetch_market_panel, research_signal_dates, run_research, write_markdown_report, write_report
 from astock.data.tushare import FundamentalPanel, TushareProxyClient, build_fundamental_panel, update_valuation_date
 from astock.paper import MultiStrategyPaperAccounts
+from astock.aggressive_research import run_aggressive_research, write_aggressive_markdown
+from astock.data.industry import IndustryPanel, build_industry_panel
+from astock.industry_research import run_industry_research, write_industry_markdown
+from astock.cgo_research import TurnoverPanel, build_turnover_panel, run_cgo_research, write_cgo_json, write_cgo_report
 
 
 def _settings(args: argparse.Namespace) -> Settings:
@@ -139,6 +143,118 @@ def fundamental_research(args: argparse.Namespace) -> int:
     return 0
 
 
+def quality_research(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    if not settings.tushare_base_token:
+        raise ValueError("TUSHARE_BASE_TOKEN is required")
+    panel = MarketPanel.load(settings.data_dir / "research" / "market_panel.npz")
+    fundamental_path = settings.data_dir / "research" / "fundamental_panel.npz"
+    client = TushareProxyClient(
+        settings.tushare_base_url,
+        settings.tushare_base_token,
+        settings.data_dir / "tushare" / "cache",
+    )
+    fundamentals = build_fundamental_panel(
+        client, panel.dates, panel.symbols, research_signal_dates(panel), fundamental_path
+    )
+    result = run_research(panel, fundamentals)
+    result["methodology"]["version"] = "V7"
+    result["methodology"]["research_theme"] = "cash-flow quality and working-capital efficiency"
+    data_path = settings.data_dir / "research" / "strategy_research_v7_quality.json"
+    document_path = settings.data_dir.parent / "docs" / "STRATEGY_RESEARCH_V7.md"
+    write_report(result, data_path)
+    write_markdown_report(result, document_path)
+    print(json.dumps({"factors": result["methodology"]["factor_count"], "selected": [item["strategy"] for item in result["selected"]], "report": str(document_path)}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def aggressive_research(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    panel = MarketPanel.load(settings.data_dir / "research" / "market_panel.npz")
+    fundamental_path = settings.data_dir / "research" / "fundamental_panel.npz"
+    fundamentals = FundamentalPanel.load(fundamental_path) if fundamental_path.exists() else None
+    result = run_aggressive_research(panel, fundamentals)
+    data_path = settings.data_dir / "research" / "strategy_research_v5_aggressive.json"
+    document_path = settings.data_dir.parent / "docs" / "STRATEGY_RESEARCH_V5_AGGRESSIVE.md"
+    write_report(result, data_path)
+    write_aggressive_markdown(result, document_path)
+    print(
+        json.dumps(
+            {
+                "symbols": len(panel.symbols),
+                "trading_days": len(panel.dates),
+                "selected": [item["strategy"] for item in result["selected"]],
+                "report": str(document_path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def industry_research(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    if not settings.tushare_base_token:
+        raise ValueError("TUSHARE_BASE_TOKEN is required")
+    panel = MarketPanel.load(settings.data_dir / "research" / "market_panel.npz")
+    industry_path = settings.data_dir / "research" / "industry_panel.npz"
+    if industry_path.exists() and not args.refresh:
+        industries = IndustryPanel.load(industry_path)
+    else:
+        client = TushareProxyClient(
+            settings.tushare_base_url,
+            settings.tushare_base_token,
+            settings.data_dir / "tushare" / "cache",
+        )
+        industries = build_industry_panel(client, panel.dates, panel.symbols, panel.close, industry_path)
+    fundamental_path = settings.data_dir / "research" / "fundamental_panel.npz"
+    fundamentals = FundamentalPanel.load(fundamental_path) if fundamental_path.exists() else None
+    result = run_industry_research(panel, industries, fundamentals)
+    data_path = settings.data_dir / "research" / "strategy_research_v6_industry.json"
+    document_path = settings.data_dir.parent / "docs" / "STRATEGY_RESEARCH_V6_INDUSTRY.md"
+    write_report(result, data_path)
+    write_industry_markdown(result, document_path)
+    print(
+        json.dumps(
+            {
+                "industries": len(industries.industry_codes),
+                "membership_coverage": result["methodology"]["membership_coverage_on_valid_stock_days"],
+                "selected": [item["base_strategy"] for item in result["selected"]],
+                "rotation": result["rotation"]["strategy"],
+                "report": str(document_path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def cgo_research(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    if not settings.tushare_base_token:
+        raise ValueError("TUSHARE_BASE_TOKEN is required")
+    market = MarketPanel.load(settings.data_dir / "research" / "market_panel.npz")
+    turnover_path = settings.data_dir / "research" / "turnover_panel.npz"
+    if turnover_path.exists() and not args.refresh:
+        turnover = TurnoverPanel.load(turnover_path)
+    else:
+        client = TushareProxyClient(
+            settings.tushare_base_url,
+            settings.tushare_base_token,
+            settings.data_dir / "tushare" / "cache",
+        )
+        turnover = build_turnover_panel(client, market, turnover_path)
+    result = run_cgo_research(market, turnover)
+    json_path = settings.data_dir / "research" / "strategy_research_v8_cgo.json"
+    report_path = settings.data_dir.parent / "docs" / "STRATEGY_RESEARCH_V8_CGO.md"
+    write_cgo_json(result, json_path)
+    write_cgo_report(result, report_path)
+    print(json.dumps({"selected": result["selected"], "report": str(report_path)}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def paper_prepare(args: argparse.Namespace) -> int:
     settings = _settings(args)
     report_path = settings.data_dir / "reports" / "strategy_research.json"
@@ -162,7 +278,14 @@ def paper_signals(args: argparse.Namespace) -> int:
         )
         fundamentals = update_valuation_date(client, fundamentals, str(panel.dates[-1]), fundamental_path)
     target_path = settings.data_dir / "paper" / "pending_signals.json"
-    plan = MultiStrategyPaperAccounts.create_signal_plan(report_path, panel, target_path, fundamentals)
+    manager = MultiStrategyPaperAccounts(settings.data_dir / "paper", settings.initial_cash)
+    plan = manager.create_signal_plan(
+        report_path,
+        panel,
+        target_path,
+        fundamentals,
+        schedule_root=manager.root,
+    )
     signal_day = date.fromisoformat(plan["signal_date"])
     future_dates = TdxClient(settings.tdx_base_url).get_trading_dates(
         (signal_day + timedelta(days=1)).strftime("%Y%m%d"),
@@ -210,6 +333,20 @@ def build_parser() -> argparse.ArgumentParser:
     fundamental_parser.add_argument("--refresh", action="store_true")
     fundamental_parser.add_argument("--env-file", type=Path)
     fundamental_parser.set_defaults(handler=fundamental_research)
+    quality_parser = subparsers.add_parser("research-quality", help="运行 V7 现金流质量与营运效率研究")
+    quality_parser.add_argument("--env-file", type=Path)
+    quality_parser.set_defaults(handler=quality_research)
+    aggressive_parser = subparsers.add_parser("research-aggressive", help="运行隔离的激进双窗口策略研究")
+    aggressive_parser.add_argument("--env-file", type=Path)
+    aggressive_parser.set_defaults(handler=aggressive_research)
+    industry_parser = subparsers.add_parser("research-industry", help="运行申万一级行业中性与轮动研究")
+    industry_parser.add_argument("--refresh", action="store_true")
+    industry_parser.add_argument("--env-file", type=Path)
+    industry_parser.set_defaults(handler=industry_research)
+    cgo_parser = subparsers.add_parser("research-cgo", help="运行资本利得悬挂（CGO）独立因子研究")
+    cgo_parser.add_argument("--refresh", action="store_true")
+    cgo_parser.add_argument("--env-file", type=Path)
+    cgo_parser.set_defaults(handler=cgo_research)
     paper_parser = subparsers.add_parser("paper-prepare", help="准备三个隔离策略账户和组合观察账户")
     paper_parser.add_argument("--env-file", type=Path)
     paper_parser.set_defaults(handler=paper_prepare)

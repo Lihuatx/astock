@@ -20,6 +20,8 @@ from astock.fees import FeeSchedule
 INITIAL_CASH = 100_000.0
 MAX_POSITION_WEIGHT = 0.15
 SLIPPAGE = 0.001
+TARGET_ANNUAL_RETURN = 0.15
+TARGET_MAX_DRAWDOWN = 0.25
 MIN_AVERAGE_AMOUNT = 20_000_000.0
 TDX_AMOUNT_UNIT = 10_000.0
 
@@ -361,12 +363,42 @@ def fundamental_factor_specs(panel: FundamentalPanel) -> tuple[FactorSpec, ...]:
     def quality_growth(panel_: MarketPanel, index: int) -> np.ndarray:
         return _combine_scores([quality(panel_, index), growth(panel_, index)], 2)
 
+    def cash_conversion(panel_: MarketPanel, index: int) -> np.ndarray:
+        return _cross_sectional_zscore(panel.ocf_to_opincome[index])
+
+    def receivable_efficiency(panel_: MarketPanel, index: int) -> np.ndarray:
+        return -_cross_sectional_zscore(panel.arturn_days[index])
+
+    def inventory_efficiency(panel_: MarketPanel, index: int) -> np.ndarray:
+        return -_cross_sectional_zscore(panel.invturn_days[index])
+
+    def working_capital_efficiency(panel_: MarketPanel, index: int) -> np.ndarray:
+        return _combine_scores(
+            [receivable_efficiency(panel_, index), inventory_efficiency(panel_, index)],
+            1,
+        )
+
+    def non_operating_independence(panel_: MarketPanel, index: int) -> np.ndarray:
+        return -_cross_sectional_zscore(np.abs(panel.n_op_profit_of_ebt[index]))
+
+    def cash_quality_value(panel_: MarketPanel, index: int) -> np.ndarray:
+        return _combine_scores(
+            [cash_conversion(panel_, index), _cross_sectional_zscore(panel.ocf_to_or[index]), value(panel_, index)],
+            2,
+        )
+
     return (
         FactorSpec("fundamental_value", "fundamental_value", "point-in-time earnings, book and dividend yield", 121, value),
         FactorSpec("fundamental_quality", "fundamental_quality", "point-in-time profitability, cash quality and leverage", 121, quality),
         FactorSpec("fundamental_growth", "fundamental_growth", "point-in-time quarterly sales and profit growth", 121, growth),
         FactorSpec("fundamental_quality_value", "fundamental_composite", "quality plus value composite", 121, quality_value),
         FactorSpec("fundamental_quality_growth", "fundamental_composite", "quality plus growth composite", 121, quality_growth),
+        FactorSpec("cash_conversion", "cash_quality", "operating cash flow divided by operating income", 121, cash_conversion),
+        FactorSpec("receivable_efficiency", "working_capital", "lower accounts-receivable turnover days", 121, receivable_efficiency),
+        FactorSpec("inventory_efficiency", "working_capital", "lower inventory turnover days", 121, inventory_efficiency),
+        FactorSpec("working_capital_efficiency", "working_capital", "receivable and inventory turnover efficiency", 121, working_capital_efficiency),
+        FactorSpec("non_operating_independence", "cash_quality_diagnostic", "lower absolute non-operating profit share", 121, non_operating_independence),
+        FactorSpec("cash_quality_value", "fundamental_composite", "cash conversion, cash margin and value composite", 121, cash_quality_value),
     )
 
 
@@ -409,6 +441,18 @@ class ExecutionAudit:
     execution_date: str
     symbol: str
     side: str
+    quantity: int
+    price: float
+    available_fields: tuple[str, ...]
+
+
+def execution_audit_violations(audit: list[ExecutionAudit]) -> int:
+    allowed_at_open = {"previous_close", "open"}
+    return sum(
+        item.signal_date >= item.execution_date
+        or not set(item.available_fields).issubset(allowed_at_open)
+        for item in audit
+    )
 
 
 def select_symbols(panel: MarketPanel, spec: FactorSpec, signal_index: int, top_n: int | None = None) -> np.ndarray:
@@ -446,6 +490,8 @@ def backtest(
     initial_cash: float = INITIAL_CASH,
     top_n: int | None = None,
     slippage: float = SLIPPAGE,
+    max_position_weight: float = MAX_POSITION_WEIGHT,
+    invested_fraction: float = 0.90,
 ) -> tuple[Performance, list[float], list[ExecutionAudit]]:
     indices = np.flatnonzero((panel.dates >= start) & (panel.dates <= end))
     if len(indices) < 2:
@@ -463,9 +509,9 @@ def backtest(
     for offset, index in enumerate(indices):
         opens = panel.open[index]
         previous_close = panel.close[index - 1] if index > 0 else np.full_like(opens, np.nan)
-        one_price = np.isfinite(panel.high[index]) & np.isfinite(panel.low[index]) & (np.abs(panel.high[index] - panel.low[index]) < 1e-9)
-        cannot_buy = one_price & np.isfinite(previous_close) & (opens >= previous_close * 1.095)
-        cannot_sell = one_price & np.isfinite(previous_close) & (opens <= previous_close * 0.905)
+        # 开盘成交只能使用开盘时已经可得的数据。日内 high/low/close 在此时均未知。
+        cannot_buy = np.isfinite(previous_close) & (opens >= previous_close * 1.095)
+        cannot_sell = np.isfinite(previous_close) & (opens <= previous_close * 0.905)
         if pending is not None:
             pending_symbols, signal_index = pending
             target_set = set(pending_symbols.tolist())
@@ -475,18 +521,35 @@ def backtest(
                 if not np.isfinite(opens[column]) or opens[column] <= 0 or cannot_sell[column]:
                     continue
                 price = opens[column] * (1.0 - slippage)
-                amount = shares.pop(column) * price
+                quantity = shares.pop(column)
+                amount = quantity * price
                 fee = _fees("sell", amount)
                 cash += amount - fee
                 traded_amount += amount
                 transaction_cost += fee
                 trade_count += 1
-                audit.append(ExecutionAudit(str(panel.dates[signal_index]), str(panel.dates[index]), str(panel.symbols[column]), "SELL"))
-            current_close = panel.close[index]
-            last_close[np.isfinite(current_close)] = current_close[np.isfinite(current_close)]
-            close_value = sum(quantity * last_close[column] for column, quantity in shares.items() if np.isfinite(last_close[column]))
-            equity = cash + close_value
-            target_value = min(equity * 0.90 / max(1, len(pending_symbols)), equity * MAX_POSITION_WEIGHT)
+                audit.append(
+                    ExecutionAudit(
+                        str(panel.dates[signal_index]),
+                        str(panel.dates[index]),
+                        str(panel.symbols[column]),
+                        "SELL",
+                        quantity,
+                        price,
+                        ("previous_close", "open"),
+                    )
+                )
+            opening_marks = np.where(np.isfinite(opens) & (opens > 0), opens, last_close)
+            opening_value = sum(
+                quantity * opening_marks[column]
+                for column, quantity in shares.items()
+                if np.isfinite(opening_marks[column])
+            )
+            equity = cash + opening_value
+            target_value = min(
+                equity * invested_fraction / max(1, len(pending_symbols)),
+                equity * max_position_weight,
+            )
             for column in pending_symbols:
                 if column in shares or not np.isfinite(opens[column]) or opens[column] <= 0 or cannot_buy[column]:
                     continue
@@ -507,7 +570,17 @@ def backtest(
                 traded_amount += amount
                 transaction_cost += fee
                 trade_count += 1
-                audit.append(ExecutionAudit(str(panel.dates[signal_index]), str(panel.dates[index]), str(panel.symbols[column]), "BUY"))
+                audit.append(
+                    ExecutionAudit(
+                        str(panel.dates[signal_index]),
+                        str(panel.dates[index]),
+                        str(panel.symbols[column]),
+                        "BUY",
+                        quantity,
+                        price,
+                        ("previous_close", "open"),
+                    )
+                )
             pending = None
         current_close = panel.close[index]
         last_close[np.isfinite(current_close)] = current_close[np.isfinite(current_close)]
@@ -605,7 +678,7 @@ def run_research(panel: MarketPanel, fundamentals: FundamentalPanel | None = Non
     for spec in optimized:
         for period, (start, end) in periods.items():
             performance, curve, audit = backtest(panel, spec, start, end)
-            violations = sum(item.signal_date >= item.execution_date for item in audit)
+            violations = execution_audit_violations(audit)
             if violations:
                 raise RuntimeError(f"causality violation in {spec.name} {period}")
             audits[f"{spec.name}:{period}"] = violations
@@ -676,10 +749,11 @@ def run_research(panel: MarketPanel, fundamentals: FundamentalPanel | None = Non
         second = result_lookup[(item["strategy"], "validation_2025")]
         item["stability"] = stability[item["strategy"]]
         item["validation_target_met"] = all(
-            performance.annual_return >= 0.15 and performance.max_drawdown <= 0.15
+            performance.annual_return >= TARGET_ANNUAL_RETURN
+            and performance.max_drawdown <= TARGET_MAX_DRAWDOWN
             for performance in (first, second)
         )
-        item["status"] = "provisional_paper_candidate"
+        item["status"] = "provisional_paper_candidate" if item["validation_target_met"] else "research_observation"
         item["confidence"] = (
             "low"
             if min(first.trade_count, second.trade_count) < 20
@@ -726,8 +800,8 @@ def run_research(panel: MarketPanel, fundamentals: FundamentalPanel | None = Non
             "factor_count": len(specs),
             "configuration_count": len(specs) * 27,
             "initial_cash": INITIAL_CASH,
-            "target_annual_return": 0.15,
-            "target_max_drawdown": 0.15,
+            "target_annual_return": TARGET_ANNUAL_RETURN,
+            "target_max_drawdown": TARGET_MAX_DRAWDOWN,
             "signal_execution": "T close signal, T+1 open execution",
             "rebalance": "optimized from 10, 20, or 40 trading days",
             "optimization_rule": "research score plus 0.25 times median neighboring-parameter score; minimum 30 research trades",
@@ -746,6 +820,10 @@ def run_research(panel: MarketPanel, fundamentals: FundamentalPanel | None = Non
                         "ocf_to_or",
                         "q_sales_yoy",
                         "q_netprofit_yoy",
+                        "ocf_to_opincome",
+                        "arturn_days",
+                        "invturn_days",
+                        "n_op_profit_of_ebt",
                         "pe_ttm",
                         "pb",
                         "dv_ttm",
@@ -800,7 +878,7 @@ def write_markdown_report(result: dict, path: Path) -> None:
     periods = ("research", "validation_2024", "validation_2025", "stress_2026")
     factor_count = result["methodology"]["factor_count"]
     configuration_count = result["methodology"]["configuration_count"]
-    version = "V4" if factor_count > 15 else "V3"
+    version = result["methodology"].get("version") or ("V4" if factor_count > 15 else "V3")
     lines = [
         f"# 三策略研究报告 {version}",
         "",
@@ -830,8 +908,8 @@ def write_markdown_report(result: dict, path: Path) -> None:
             "- 2021～2023：参数研究；2024、2025：双验证；2026：只作压力测试。",
             "- 参数选择同时考虑研究得分和相邻参数中位数，研究期成交少于 30 笔的配置不得入选。",
             "- 最终排名要求两个验证期不能同时亏损，并以验证期日收益相关性作软惩罚，不再按家族标签硬去重。",
-            "- T 日收盘生成信号，T＋1 开盘后成交；未来函数审计违规数为 0。",
-            "- 初始资金 100000 元，计入佣金、印花税、过户费、10BP 单边滑点及一字板不可成交。",
+            "- T 日收盘生成信号，T＋1 开盘后成交；跨日因果与开盘字段可用性审计违规数为 0。",
+            "- 初始资金 100000 元，计入佣金、印花税、过户费和 10BP 单边滑点；开盘触及涨跌停时保守按不可成交处理。",
             "- 基本面数据仅在公告日后的下一交易日生效，每日估值不跨日回填。" if factor_count > 15 else "",
             "- PE、PB、股息率只抓取 118 个实际信号日，因此全面板覆盖率约 7%～10% 是稀疏设计，不是接口缺失。" if factor_count > 15 else "",
         ]

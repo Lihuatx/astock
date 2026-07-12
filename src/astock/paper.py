@@ -1,24 +1,69 @@
 from __future__ import annotations
 
 import json
+import numpy as np
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from astock.broker import AShareSimBroker
 from astock.data.tdx import TdxClient
 from astock.oms import OMS
-from astock.models import Side
+from astock.models import Side, TradeIntent
 from astock.data.tushare import FundamentalPanel
 from astock.research import MarketPanel, factor_specs, fundamental_factor_specs, select_symbols
 from astock.risk import RiskEngine, RiskLimits
 from astock.storage import Repository
-from astock.strategy import MomentumTrendStrategy
 
 
 PAPER_SLIPPAGE = Decimal("0.002")
+
+
+def _rebalance_intents(
+    strategy: str,
+    selected: list[str],
+    positions: dict[str, int],
+    prices: dict[str, Decimal],
+    equity: Decimal,
+    created_at: datetime,
+) -> list[TradeIntent]:
+    intents: list[TradeIntent] = []
+    selected_set = set(selected)
+    for symbol, quantity in sorted(positions.items()):
+        if quantity > 0 and symbol not in selected_set:
+            intents.append(
+                TradeIntent(
+                    client_order_id=f"{created_at:%Y%m%d}-{symbol}-SELL",
+                    symbol=symbol,
+                    side=Side.SELL,
+                    quantity=quantity,
+                    limit_price=prices[symbol],
+                    created_at=created_at,
+                    reason=f"{strategy}_rebalance_exit",
+                )
+            )
+    if not selected:
+        return intents
+    target_value = min(equity * Decimal("0.90") / len(selected), equity * Decimal("0.15"))
+    for symbol in selected:
+        price = prices[symbol]
+        target_quantity = int((target_value / price / 100).to_integral_value(rounding=ROUND_FLOOR)) * 100
+        delta = target_quantity - positions.get(symbol, 0)
+        if delta >= 100:
+            intents.append(
+                TradeIntent(
+                    client_order_id=f"{created_at:%Y%m%d}-{symbol}-BUY",
+                    symbol=symbol,
+                    side=Side.BUY,
+                    quantity=delta,
+                    limit_price=price,
+                    created_at=created_at,
+                    reason=f"{strategy}_rebalance_entry",
+                )
+            )
+    return intents
 
 
 @dataclass(frozen=True)
@@ -72,28 +117,55 @@ class MultiStrategyPaperAccounts:
         panel: MarketPanel,
         target_path: Path,
         fundamentals: FundamentalPanel | None = None,
+        schedule_root: Path | None = None,
     ) -> dict:
         report = json.loads(report_path.read_text(encoding="utf-8"))
         available_specs = factor_specs() + (fundamental_factor_specs(fundamentals) if fundamentals is not None else ())
         specs = {spec.name: spec for spec in available_specs}
         signal_index = len(panel.dates) - 1
         strategies = []
+        skipped = []
         for selected in report.get("selected") or []:
             name = selected["strategy"]
+            rebalance_days = int(selected["rebalance_days"])
+            if schedule_root is not None:
+                state_path = schedule_root / name / "schedule.json"
+                if state_path.exists():
+                    state = json.loads(state_path.read_text(encoding="utf-8"))
+                    last_signal_date = str(state.get("last_signal_date") or "")
+                    elapsed = int(np.sum((panel.dates > last_signal_date) & (panel.dates <= panel.dates[signal_index])))
+                    if last_signal_date and elapsed < rebalance_days:
+                        skipped.append(
+                            {
+                                "strategy": name,
+                                "reason": "rebalance_not_due",
+                                "last_signal_date": last_signal_date,
+                                "trading_days_elapsed": elapsed,
+                                "rebalance_days": rebalance_days,
+                            }
+                        )
+                        continue
             spec = replace(
                 specs[name],
                 top_n=int(selected["top_n"]),
-                rebalance_days=int(selected["rebalance_days"]),
+                rebalance_days=rebalance_days,
                 minimum_market_breadth=float(selected["minimum_market_breadth"]),
             )
             columns = select_symbols(panel, spec, signal_index)
-            strategies.append({"strategy": name, "symbols": panel.symbols[columns].tolist()})
+            strategies.append(
+                {
+                    "strategy": name,
+                    "symbols": panel.symbols[columns].tolist(),
+                    "rebalance_days": rebalance_days,
+                }
+            )
         plan = {
             "signal_date": str(panel.dates[signal_index]),
             "earliest_execution_date": None,
             "generated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
             "rule": "T close signal; execution is forbidden before the next trading day",
             "strategies": strategies,
+            "skipped": skipped,
         }
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -112,6 +184,12 @@ class MultiStrategyPaperAccounts:
         results: list[dict] = []
         for strategy_plan in plan["strategies"]:
             strategy = strategy_plan["strategy"]
+            schedule_path = self.root / strategy / "schedule.json"
+            if schedule_path.exists():
+                state = json.loads(schedule_path.read_text(encoding="utf-8"))
+                if str(state.get("last_signal_date") or "") >= plan["signal_date"]:
+                    results.append({"strategy": strategy, "skipped": True, "reason": "signal_already_executed"})
+                    continue
             repository = Repository(self.root / strategy / "account.db")
             broker = AShareSimBroker(repository, self.initial_cash)
             account = broker.snapshot(trading_day)
@@ -119,8 +197,8 @@ class MultiStrategyPaperAccounts:
             quotes = {symbol: client.get_snapshot(symbol) for symbol in symbols}
             prices = {symbol: quote.last for symbol, quote in quotes.items()}
             equity = account.cash + sum(Decimal(quantity) * prices[symbol] for symbol, quantity in account.positions.items())
-            intents = MomentumTrendStrategy().rebalance_intents(
-                strategy_plan["symbols"], account.positions, prices, equity, executed_at
+            intents = _rebalance_intents(
+                strategy, strategy_plan["symbols"], account.positions, prices, equity, executed_at
             )
             oms = OMS(repository, broker)
             risk = RiskEngine(RiskLimits(max_daily_orders=25))
@@ -146,13 +224,28 @@ class MultiStrategyPaperAccounts:
                     else replace(quote, bid_price=quote.bid_price * (Decimal("1") - PAPER_SLIPPAGE))
                 )
                 fills.append(broker.match(order.client_order_id, execution_quote, executed_at))
+            reconciled = broker.reconcile(trading_day).ok
             results.append(
                 {
                     "strategy": strategy,
                     "order_count": len(orders),
                     "fill_count": sum(fill is not None for fill in fills),
-                    "reconciled": broker.reconcile(trading_day).ok,
+                    "reconciled": reconciled,
                 }
             )
+            if reconciled:
+                schedule_path.parent.mkdir(parents=True, exist_ok=True)
+                schedule_path.write_text(
+                    json.dumps(
+                        {
+                            "last_signal_date": plan["signal_date"],
+                            "last_execution_date": trading_day.isoformat(),
+                            "rebalance_days": int(strategy_plan["rebalance_days"]),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
             repository.close()
         return results

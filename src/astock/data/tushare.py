@@ -115,6 +115,16 @@ class FundamentalPanel:
     pe_ttm: np.ndarray
     pb: np.ndarray
     dv_ttm: np.ndarray
+    ocf_to_opincome: np.ndarray | None = None
+    arturn_days: np.ndarray | None = None
+    invturn_days: np.ndarray | None = None
+    n_op_profit_of_ebt: np.ndarray | None = None
+
+    def __post_init__(self) -> None:
+        shape = (len(self.dates), len(self.symbols))
+        for name in ("ocf_to_opincome", "arturn_days", "invturn_days", "n_op_profit_of_ebt"):
+            if getattr(self, name) is None:
+                object.__setattr__(self, name, np.full(shape, np.nan, dtype=np.float64))
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +153,7 @@ def build_fundamental_panel(
     symbol_list = symbols.tolist()
     financial_fields = (
         "ts_code,ann_date,end_date,update_flag,roe,roic,grossprofit_margin,debt_to_assets,"
-        "ocf_to_or,q_sales_yoy,q_netprofit_yoy"
+        "ocf_to_or,q_sales_yoy,q_netprofit_yoy,ocf_to_opincome,arturn_days,invturn_days,n_op_profit_of_ebt"
     )
     financial_requests = [
         {
@@ -167,6 +177,10 @@ def build_fundamental_panel(
         "ocf_to_or",
         "q_sales_yoy",
         "q_netprofit_yoy",
+        "ocf_to_opincome",
+        "arturn_days",
+        "invturn_days",
+        "n_op_profit_of_ebt",
         "pe_ttm",
         "pb",
         "dv_ttm",
@@ -186,7 +200,7 @@ def build_fundamental_panel(
         effective = int(np.searchsorted(dates, iso_date, side="right"))
         if effective < len(dates):
             events.setdefault(effective, []).append((column, row))
-    current = {name: np.full(len(symbols), np.nan, dtype=np.float64) for name in metric_names[:7]}
+    current = {name: np.full(len(symbols), np.nan, dtype=np.float64) for name in metric_names[:11]}
     for day_index in range(len(dates)):
         for column, row in events.get(day_index, []):
             for name in current:
