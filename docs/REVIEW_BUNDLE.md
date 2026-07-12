@@ -6,10 +6,11 @@
 
 - `schema_version`：当前固定为 `1`。
 - `strategy_set_id`：`set-` 加研究报告 SHA256 前 16 位。
-- `content_sha256`：对排除 envelope 字段后的事实内容执行规范 JSON SHA256。
+- `generated_at`：取生成该 Bundle 的已持久化 RunRecord 完成时间，不得在重建时读取新的墙钟时间。
+- `content_sha256`：对包含 `generated_at` 的全部业务事实执行规范 JSON SHA256；只排除由哈希派生的 `bundle_id` 和 `content_sha256`。
 - `bundle_id`：`review-<trading_day>-<content_sha256 前 16 位>`。
-- envelope 字段为 `schema_version`、`bundle_id`、`content_sha256`、`generated_at`。
-- 同一 `bundle_id` 的不同内容必须拒绝；已有 Bundle 不得原地覆盖。
+- 同一持久化输入重复生成必须得到完全相同的 UTF-8 规范 JSON 字节、`content_sha256` 和 `bundle_id`。
+- 同一 `bundle_id` 的不同字节必须拒绝；已有 Bundle 不得原地覆盖。
 
 ## 事实内容
 
@@ -18,4 +19,4 @@
 - 决策链：信号、选股解释、风险决定、订单、成交、费用和对账事件。
 - 展示：权益序列、健康状态、活动告警、已知限制和模拟盘声明。
 
-`LiveStatus v1` 与 Bundle 分离，只保存 runner、数据源、任务、同步积压和当前告警。它可以更新，但不能修改历史 Bundle。
+`LiveStatus v1` 与 Bundle 分离，只保存 runner、数据源、任务、同步积压和当前告警。每版状态必须包含独立 `status_id`、`source_id` 和生成序号／时间，保存为不可变本地 payload；服务器按 `source_id` 派生最新视图，但不能让新状态覆盖尚未同步的旧版本，也不能修改历史 Bundle。

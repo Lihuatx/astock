@@ -1,4 +1,4 @@
-# P0～P3 操作说明
+# P0～P4 操作说明
 
 ## 通达信准备
 
@@ -66,10 +66,14 @@ npm run build:report
 cd ..
 $env:ASTOCK_ALLOWED_TAILSCALE_USERS='local@example.com'
 $env:ASTOCK_SYNC_TOKEN='local-test-token'
-python -m astock.cli dashboard --port 8080
+python -m astock.cli dashboard --port 18080
 ```
 
-生产环境只允许容器监听 `127.0.0.1:8080`，由 Tailscale Serve 提供私网 HTTPS。前端查询依赖 `Tailscale-User-Login` 允许列表；上传使用独立 Bearer token。不得将 Dashboard 端口直接暴露到公网。
+生产环境主机只允许监听 `127.0.0.1:18080`，容器内部端口可以独立设置，由 Tailscale Serve 提供私网 HTTPS。前端查询依赖 `Tailscale-User-Login` 允许列表；上传使用独立 Bearer token。不得启用 Funnel，也不得将 Dashboard 端口直接暴露到公网。
+
+目标 Tailscale Serve 配置为转发到 `http://127.0.0.1:18080`。执行 Docker、Tailscale、服务器目录、端口或系统服务变更前，必须先说明风险并获得单独确认。
+
+GitHub Actions 只允许执行 Python 测试、前端检查／构建和不推送的 Docker build。任何镜像发布、部署或 registry 登录 workflow 都不属于 P4 自动验收范围，未经确认不得运行。
 
 ## P4 备份
 
@@ -78,6 +82,8 @@ python -m astock.cli dashboard --port 8080
 ```powershell
 python -m astock.cli dashboard-backup --target backups/server-YYYYMMDD.db
 ```
+
+P4 可恢复备份必须把 SQLite backup、不可变 Bundle、版本信息和逐文件 SHA256 manifest 绑定为同一批次，并在独立空目录完成真实恢复；只恢复数据库索引不算通过。
 
 Docker、Tailscale、服务器目录和定时备份属于系统配置，必须逐步确认后才能在腾讯云服务器执行。
 
