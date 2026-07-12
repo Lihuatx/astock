@@ -31,6 +31,10 @@ class Settings:
     data_dir: Path
     db_path: Path
     initial_cash: Decimal
+    sync_base_url: str | None
+    sync_token: str | None
+    source_id: str
+    paper_execution_enabled: bool
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> "Settings":
@@ -47,4 +51,8 @@ class Settings:
             data_dir=data_dir,
             db_path=db_path,
             initial_cash=Decimal(os.getenv("ASTOCK_INITIAL_CASH", "100000")),
+            sync_base_url=os.getenv("ASTOCK_SYNC_BASE_URL") or None,
+            sync_token=os.getenv("ASTOCK_SYNC_TOKEN") or None,
+            source_id=os.getenv("ASTOCK_SOURCE_ID", "windows-primary"),
+            paper_execution_enabled=os.getenv("ASTOCK_PAPER_EXECUTION_ENABLED", "false").lower() == "true",
         )

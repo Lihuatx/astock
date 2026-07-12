@@ -30,12 +30,19 @@ python -m astock.cli research --env-file .env.demo
 python -m astock.cli research-fundamental --env-file .env.demo
 python -m astock.cli paper-prepare --env-file .env.demo
 python -m astock.cli paper-signals --env-file .env.demo
-# 仅在下一交易日、TDX 日历确认后执行：
-python -m astock.cli paper-execute --env-file .env.demo
+# 验收完成前，paper-execute 会因默认禁用而拒绝执行。
+python -m astock.cli runner --once --env-file .env.demo
+
+cd web
+npm ci
+npm test
+npm run build
 ```
 
 `doctor` 只报告配置项是否存在和接口能力，不输出密钥。详细运行与验收见 `docs/OPERATIONS.md` 和 `docs/ACCEPTANCE.md`。
 
 `replay` 使用临时 SQLite 数据库执行策略、风控、OMS、模拟成交与逐日对账，不会触发真实交易，也不会改写正式账户数据。
+
+P4 使用研究报告哈希隔离每一代观察账户，默认禁止自动模拟执行。私有 Dashboard 只展示服务器接收的 `ReviewBundle` 和 `LiveStatus`，不提供下单、撤单或策略修改能力。Bundle 规范见 `docs/REVIEW_BUNDLE.md`。
 
 稳健策略研究结论见 `docs/STRATEGY_RESEARCH_V4.md`，隔离的激进研究结论见 `docs/STRATEGY_RESEARCH_V5_AGGRESSIVE.md`，申万一级行业中性与轮动研究见 `docs/STRATEGY_RESEARCH_V6_INDUSTRY.md`。三个稳健模拟策略使用完全隔离的 100000 元账户，另设一个 100000 元组合观察账户；V5／V6 均未新增合格模拟候选，所有结果都不是实盘策略。

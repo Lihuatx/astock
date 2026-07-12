@@ -13,9 +13,12 @@ from astock.data.tdx import TdxClient
 from astock.oms import OMS
 from astock.models import Side, TradeIntent
 from astock.data.tushare import FundamentalPanel
-from astock.research import MarketPanel, factor_specs, fundamental_factor_specs, select_symbols
+from astock.research import MarketPanel, factor_specs, fundamental_factor_specs
 from astock.risk import RiskEngine, RiskLimits
 from astock.storage import Repository
+from astock.observability.bundle import sha256_file, strategy_set_id as report_strategy_set_id
+from astock.observability.repository import ObservabilityRepository
+from astock.research import select_symbols_with_audit
 
 
 PAPER_SLIPPAGE = Decimal("0.002")
@@ -77,9 +80,17 @@ class PaperAccountStatus:
 
 
 class MultiStrategyPaperAccounts:
-    def __init__(self, root: Path, initial_cash: Decimal) -> None:
+    def __init__(
+        self,
+        root: Path,
+        initial_cash: Decimal,
+        observability: ObservabilityRepository | None = None,
+        strategy_set_id: str | None = None,
+    ) -> None:
         self.root = root
         self.initial_cash = initial_cash
+        self.observability = observability
+        self.strategy_set_id = strategy_set_id
 
     @staticmethod
     def selected_strategies(report_path: Path) -> list[str]:
@@ -97,6 +108,18 @@ class MultiStrategyPaperAccounts:
             path = self.root / strategy / "account.db"
             repository = Repository(path)
             broker = AShareSimBroker(repository, self.initial_cash)
+            if self.observability:
+                account_id = f"{self.strategy_set_id or 'legacy'}:{strategy}:g1"
+                self.observability.register_account(
+                    account_id,
+                    strategy,
+                    1,
+                    path,
+                    self.initial_cash,
+                    datetime.now(ZoneInfo("Asia/Shanghai")),
+                    self.strategy_set_id,
+                    "CURRENT",
+                )
             snapshot = broker.snapshot(date.today())
             statuses.append(
                 PaperAccountStatus(
@@ -120,6 +143,8 @@ class MultiStrategyPaperAccounts:
         schedule_root: Path | None = None,
     ) -> dict:
         report = json.loads(report_path.read_text(encoding="utf-8"))
+        report_hash = sha256_file(report_path)
+        set_id = report_strategy_set_id(report_path)
         available_specs = factor_specs() + (fundamental_factor_specs(fundamentals) if fundamentals is not None else ())
         specs = {spec.name: spec for spec in available_specs}
         signal_index = len(panel.dates) - 1
@@ -151,15 +176,19 @@ class MultiStrategyPaperAccounts:
                 rebalance_days=rebalance_days,
                 minimum_market_breadth=float(selected["minimum_market_breadth"]),
             )
-            columns = select_symbols(panel, spec, signal_index)
+            columns, selection_audit = select_symbols_with_audit(panel, spec, signal_index)
             strategies.append(
                 {
                     "strategy": name,
                     "symbols": panel.symbols[columns].tolist(),
                     "rebalance_days": rebalance_days,
+                    "selection_audit": [item.__dict__ for item in selection_audit],
                 }
             )
         plan = {
+            "schema_version": 1,
+            "strategy_set_id": set_id,
+            "report_sha256": report_hash,
             "signal_date": str(panel.dates[signal_index]),
             "earliest_execution_date": None,
             "generated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
@@ -171,8 +200,25 @@ class MultiStrategyPaperAccounts:
         target_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
         return plan
 
-    def execute_plan(self, plan_path: Path, client: TdxClient, trading_day: date, executed_at: datetime) -> list[dict]:
+    def execute_plan(
+        self,
+        plan_path: Path,
+        client: TdxClient,
+        trading_day: date,
+        executed_at: datetime,
+        expected_strategy_set_id: str | None = None,
+    ) -> list[dict]:
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        expected = expected_strategy_set_id or self.strategy_set_id
+        if expected and plan.get("strategy_set_id") != expected:
+            if self.observability:
+                self.observability.append_event(
+                    "STALE_SIGNAL_PLAN",
+                    executed_at,
+                    {"expected_strategy_set_id": expected, "actual_strategy_set_id": plan.get("strategy_set_id")},
+                    event_id=f"stale-plan:{plan_path}",
+                )
+            raise ValueError("pending signal plan does not match the current strategy set")
         signal_day = date.fromisoformat(plan["signal_date"])
         if trading_day <= signal_day:
             raise ValueError("paper execution must be after the signal date")
@@ -211,7 +257,21 @@ class MultiStrategyPaperAccounts:
                     else reference.bid_price * (Decimal("1") - PAPER_SLIPPAGE)
                 )
                 intent = replace(intent, limit_price=execution_price)
-                if risk.evaluate(intent, account, prices, daily_order_count).allowed:
+                decision = risk.evaluate(intent, account, prices, daily_order_count)
+                if self.observability:
+                    self.observability.append_event(
+                        "RISK_DECISION",
+                        executed_at,
+                        {
+                            "strategy": strategy,
+                            "client_order_id": intent.client_order_id,
+                            "allowed": decision.allowed,
+                            "reason": decision.reason,
+                        },
+                        event_id=f"risk:{strategy}:{intent.client_order_id}",
+                        account_id=f"{self.strategy_set_id}:{strategy}:g1" if self.strategy_set_id else None,
+                    )
+                if decision.allowed:
                     oms.enqueue(intent)
                     daily_order_count += 1
             orders = oms.dispatch(quotes, trading_day, executed_at)
@@ -224,16 +284,55 @@ class MultiStrategyPaperAccounts:
                     else replace(quote, bid_price=quote.bid_price * (Decimal("1") - PAPER_SLIPPAGE))
                 )
                 fills.append(broker.match(order.client_order_id, execution_quote, executed_at))
-            reconciled = broker.reconcile(trading_day).ok
+            reconciliation = broker.reconcile(trading_day)
+            if self.observability:
+                account_id = f"{self.strategy_set_id}:{strategy}:g1" if self.strategy_set_id else None
+                for order in orders:
+                    self.observability.append_event(
+                        "ORDER",
+                        executed_at,
+                        {
+                            "strategy": strategy,
+                            "client_order_id": order.client_order_id,
+                            "symbol": order.symbol,
+                            "side": order.side.value,
+                            "quantity": order.quantity,
+                            "status": order.status.value,
+                        },
+                        event_id=f"audit-order:{strategy}:{order.client_order_id}",
+                        account_id=account_id,
+                    )
+                for fill in (item for item in fills if item is not None):
+                    self.observability.append_event(
+                        "FILL",
+                        fill.filled_at,
+                        {
+                            "strategy": strategy,
+                            "fill_id": fill.fill_id,
+                            "client_order_id": fill.client_order_id,
+                            "quantity": fill.quantity,
+                            "price": str(fill.price),
+                            "total_fee": str(fill.total_fee),
+                        },
+                        event_id=f"audit-fill:{strategy}:{fill.fill_id}",
+                        account_id=account_id,
+                    )
+                self.observability.append_event(
+                    "RECONCILIATION",
+                    executed_at,
+                    {"strategy": strategy, "ok": reconciliation.ok, "reasons": reconciliation.reasons},
+                    event_id=f"reconciliation:{strategy}:{trading_day.isoformat()}",
+                    account_id=account_id,
+                )
             results.append(
                 {
                     "strategy": strategy,
                     "order_count": len(orders),
                     "fill_count": sum(fill is not None for fill in fills),
-                    "reconciled": reconciled,
+                    "reconciled": reconciliation.ok,
                 }
             )
-            if reconciled:
+            if reconciliation.ok:
                 schedule_path.parent.mkdir(parents=True, exist_ok=True)
                 schedule_path.write_text(
                     json.dumps(

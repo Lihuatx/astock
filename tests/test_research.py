@@ -10,7 +10,7 @@ from datetime import date, datetime
 
 import numpy as np
 
-from astock.research import TARGET_ANNUAL_RETURN, TARGET_MAX_DRAWDOWN, FactorSpec, MarketPanel, _wilder_rsi, backtest, factor_specs, fundamental_factor_specs, select_symbols
+from astock.research import TARGET_ANNUAL_RETURN, TARGET_MAX_DRAWDOWN, FactorSpec, MarketPanel, _wilder_rsi, backtest, factor_specs, fundamental_factor_specs, select_symbols, select_symbols_with_audit
 from astock.data.tushare import FundamentalPanel, build_fundamental_panel
 from astock.paper import MultiStrategyPaperAccounts
 from astock.aggressive_research import _monthly_statistics
@@ -37,6 +37,15 @@ class ResearchCausalityCase(unittest.TestCase):
     def test_stable_account_research_targets(self) -> None:
         self.assertEqual(TARGET_ANNUAL_RETURN, 0.15)
         self.assertEqual(TARGET_MAX_DRAWDOWN, 0.25)
+
+    def test_selection_audit_matches_selected_symbols(self) -> None:
+        panel = synthetic_panel(days=260, symbols=8)
+        spec = replace(factor_specs()[0], top_n=3, minimum_market_breadth=0.0)
+        selected, audit = select_symbols_with_audit(panel, spec, 200)
+        np.testing.assert_array_equal(selected, select_symbols(panel, spec, 200))
+        audited = {item.symbol for item in audit if item.selected}
+        self.assertEqual(audited, set(panel.symbols[selected]))
+        self.assertTrue(all(item.reason for item in audit))
 
     @staticmethod
     def _rotating_spec() -> FactorSpec:

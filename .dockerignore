@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+data
+logs
+reports
+backups
+web/node_modules
+web/dist
+web/report-dist
+__pycache__
+*.db
+*.db-*
+.env*

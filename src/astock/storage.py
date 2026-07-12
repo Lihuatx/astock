@@ -263,3 +263,13 @@ class Repository:
         )
         self.connection.commit()
 
+    def load_ledger(self) -> list[dict]:
+        return [
+            {
+                "event_id": row["event_id"],
+                "event_type": row["event_type"],
+                "payload": json.loads(row["payload"]),
+                "created_at": row["created_at"],
+            }
+            for row in self.connection.execute("SELECT * FROM ledger ORDER BY created_at,event_id")
+        ]

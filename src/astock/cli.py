@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import tempfile
+import os
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -25,10 +26,29 @@ from astock.aggressive_research import run_aggressive_research, write_aggressive
 from astock.data.industry import IndustryPanel, build_industry_panel
 from astock.industry_research import run_industry_research, write_industry_markdown
 from astock.cgo_research import TurnoverPanel, build_turnover_panel, run_cgo_research, write_cgo_json, write_cgo_report
+from astock.observability.repository import ObservabilityRepository
+from astock.observability.runner import Runner
+from astock.observability.snapshot import initialize_observation_set
+from astock.observability.report import build_offline_report
+from astock.dashboard.storage import DashboardStore
 
 
 def _settings(args: argparse.Namespace) -> Settings:
     return Settings.from_env(args.env_file)
+
+
+def _paper_context(settings: Settings) -> tuple[ObservabilityRepository, str, Path]:
+    report_path = settings.data_dir / "reports" / "strategy_research.json"
+    observability = ObservabilityRepository(settings.data_dir / "observability" / "observability.db")
+    set_id, root = initialize_observation_set(
+        observability,
+        report_path,
+        settings.data_dir / "paper",
+        settings.initial_cash,
+        Path.cwd(),
+        datetime.now(ZoneInfo("Asia/Shanghai")),
+    )
+    return observability, set_id, root
 
 
 def doctor(args: argparse.Namespace) -> int:
@@ -258,8 +278,12 @@ def cgo_research(args: argparse.Namespace) -> int:
 def paper_prepare(args: argparse.Namespace) -> int:
     settings = _settings(args)
     report_path = settings.data_dir / "reports" / "strategy_research.json"
-    manager = MultiStrategyPaperAccounts(settings.data_dir / "paper", settings.initial_cash)
-    statuses = manager.prepare(report_path)
+    observability, set_id, root = _paper_context(settings)
+    try:
+        manager = MultiStrategyPaperAccounts(root, settings.initial_cash, observability, set_id)
+        statuses = manager.prepare(report_path)
+    finally:
+        observability.close()
     print(json.dumps([status.__dict__ for status in statuses], ensure_ascii=False, indent=2))
     return 0
 
@@ -277,37 +301,94 @@ def paper_signals(args: argparse.Namespace) -> int:
             settings.data_dir / "tushare" / "cache",
         )
         fundamentals = update_valuation_date(client, fundamentals, str(panel.dates[-1]), fundamental_path)
-    target_path = settings.data_dir / "paper" / "pending_signals.json"
-    manager = MultiStrategyPaperAccounts(settings.data_dir / "paper", settings.initial_cash)
-    plan = manager.create_signal_plan(
-        report_path,
-        panel,
-        target_path,
-        fundamentals,
-        schedule_root=manager.root,
-    )
-    signal_day = date.fromisoformat(plan["signal_date"])
-    future_dates = TdxClient(settings.tdx_base_url).get_trading_dates(
-        (signal_day + timedelta(days=1)).strftime("%Y%m%d"),
-        (signal_day + timedelta(days=14)).strftime("%Y%m%d"),
-    )
-    plan["earliest_execution_date"] = future_dates[0].isoformat() if future_dates else None
-    target_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    observability, set_id, root = _paper_context(settings)
+    try:
+        target_path = root / "pending_signals.json"
+        manager = MultiStrategyPaperAccounts(root, settings.initial_cash, observability, set_id)
+        plan = manager.create_signal_plan(
+            report_path,
+            panel,
+            target_path,
+            fundamentals,
+            schedule_root=manager.root,
+        )
+        signal_day = date.fromisoformat(plan["signal_date"])
+        future_dates = TdxClient(settings.tdx_base_url).get_trading_dates(
+            (signal_day + timedelta(days=1)).strftime("%Y%m%d"),
+            (signal_day + timedelta(days=14)).strftime("%Y%m%d"),
+        )
+        plan["earliest_execution_date"] = future_dates[0].isoformat() if future_dates else None
+        target_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+        observability.append_event(
+            "SIGNAL_PLAN",
+            datetime.now(ZoneInfo("Asia/Shanghai")),
+            {"strategy_set_id": set_id, "signal_date": plan["signal_date"], "strategies": plan["strategies"]},
+            event_id=f"signal-plan:{set_id}:{plan['signal_date']}",
+        )
+    finally:
+        observability.close()
     print(json.dumps(plan, ensure_ascii=False, indent=2))
     return 0
 
 
 def paper_execute(args: argparse.Namespace) -> int:
     settings = _settings(args)
-    manager = MultiStrategyPaperAccounts(settings.data_dir / "paper", settings.initial_cash)
-    now = datetime.now(ZoneInfo("Asia/Shanghai"))
-    results = manager.execute_plan(
-        settings.data_dir / "paper" / "pending_signals.json",
-        TdxClient(settings.tdx_base_url),
-        now.date(),
-        now,
-    )
+    if not settings.paper_execution_enabled:
+        raise ValueError("paper execution is disabled; complete P4 execution acceptance before enabling it")
+    observability, set_id, root = _paper_context(settings)
+    try:
+        manager = MultiStrategyPaperAccounts(root, settings.initial_cash, observability, set_id)
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        results = manager.execute_plan(
+            root / "pending_signals.json",
+            TdxClient(settings.tdx_base_url),
+            now.date(),
+            now,
+            expected_strategy_set_id=set_id,
+        )
+    finally:
+        observability.close()
     print(json.dumps(results, ensure_ascii=False, indent=2))
+    return 0
+
+
+def runner_command(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    runner = Runner(settings, Path.cwd(), args.env_file)
+    if args.once:
+        try:
+            runner.tick()
+        finally:
+            runner.close()
+    else:
+        runner.run_forever()
+    return 0
+
+
+def dashboard_command(args: argparse.Namespace) -> int:
+    if args.env_file:
+        Settings.from_env(args.env_file)
+    import uvicorn
+    from astock.dashboard.app import create_app
+
+    uvicorn.run(create_app(), host="127.0.0.1", port=args.port, workers=1)
+    return 0
+
+
+def dashboard_backup(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    server_root = Path(os.getenv("ASTOCK_SERVER_DATA_DIR", settings.data_dir / "server")).resolve()
+    store = DashboardStore(server_root / "server.db", server_root / "bundles")
+    store.backup(args.target)
+    store.close()
+    print(json.dumps({"backup": str(args.target.resolve())}, ensure_ascii=False))
+    return 0
+
+
+def review_build(args: argparse.Namespace) -> int:
+    target = args.output or args.bundle.with_suffix(".html")
+    build_offline_report(args.bundle, args.assets, target)
+    print(json.dumps({"report": str(target.resolve())}, ensure_ascii=False))
     return 0
 
 
@@ -356,6 +437,24 @@ def build_parser() -> argparse.ArgumentParser:
     execute_parser = subparsers.add_parser("paper-execute", help="在下一交易日执行三个隔离账户的模拟计划")
     execute_parser.add_argument("--env-file", type=Path)
     execute_parser.set_defaults(handler=paper_execute)
+    runner_parser = subparsers.add_parser("runner", help="运行 P4 单实例观测与同步 runner")
+    runner_parser.add_argument("--once", action="store_true")
+    runner_parser.add_argument("--env-file", type=Path)
+    runner_parser.set_defaults(handler=runner_command)
+    dashboard_parser = subparsers.add_parser("dashboard", help="启动私有只读 Dashboard")
+    dashboard_parser.add_argument("--port", type=int, default=8080)
+    dashboard_parser.add_argument("--env-file", type=Path)
+    dashboard_parser.set_defaults(handler=dashboard_command)
+    backup_parser = subparsers.add_parser("dashboard-backup", help="使用 SQLite online backup 备份 Dashboard 索引")
+    backup_parser.add_argument("--target", type=Path, required=True)
+    backup_parser.add_argument("--env-file", type=Path)
+    backup_parser.set_defaults(handler=dashboard_backup)
+    review_parser = subparsers.add_parser("review-build", help="从不可变 ReviewBundle 生成离线 HTML")
+    review_parser.add_argument("--bundle", type=Path, required=True)
+    review_parser.add_argument("--assets", type=Path, default=Path("web/report-dist"))
+    review_parser.add_argument("--output", type=Path)
+    review_parser.add_argument("--env-file", type=Path)
+    review_parser.set_defaults(handler=review_build)
     return parser
 
 

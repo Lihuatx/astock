@@ -1,6 +1,8 @@
 .env*
 !.env.example
 .venv/
+node_modules/
+web/report-dist/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -14,6 +16,8 @@ dist/
 /logs/
 /reports/
 /backups/
+/server-data/
+/deploy/data/
 *.db
 *.db-*
 *.sqlite*

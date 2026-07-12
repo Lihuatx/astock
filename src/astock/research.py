@@ -446,6 +446,16 @@ class ExecutionAudit:
     available_fields: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class SelectionAudit:
+    symbol: str
+    score: float | None
+    rank: int | None
+    selected: bool
+    eligible: bool
+    reason: str
+
+
 def execution_audit_violations(audit: list[ExecutionAudit]) -> int:
     allowed_at_open = {"previous_close", "open"}
     return sum(
@@ -455,23 +465,66 @@ def execution_audit_violations(audit: list[ExecutionAudit]) -> int:
     )
 
 
-def select_symbols(panel: MarketPanel, spec: FactorSpec, signal_index: int, top_n: int | None = None) -> np.ndarray:
+def select_symbols_with_audit(
+    panel: MarketPanel, spec: FactorSpec, signal_index: int, top_n: int | None = None
+) -> tuple[np.ndarray, list[SelectionAudit]]:
     if signal_index < spec.min_history:
-        return np.array([], dtype=np.int64)
+        return np.array([], dtype=np.int64), []
     score = spec.scorer(panel, signal_index).copy()
     average_amount = _nanmean(panel.amount[signal_index - 19 : signal_index + 1], axis=0)
     known = np.sum(np.isfinite(panel.close[signal_index - 119 : signal_index + 1]), axis=0) == 120
     trend = _trend_mask(panel, signal_index)
     eligible = known & np.isfinite(panel.close[signal_index]) & (panel.close[signal_index] > 0) & (average_amount >= MIN_AVERAGE_AMOUNT)
     if np.sum(eligible) == 0 or float(np.mean(trend[eligible])) < spec.minimum_market_breadth:
-        return np.array([], dtype=np.int64)
+        return np.array([], dtype=np.int64), [
+            SelectionAudit(
+                symbol=str(symbol),
+                score=float(score[index]) if np.isfinite(score[index]) else None,
+                rank=None,
+                selected=False,
+                eligible=bool(eligible[index]),
+                reason="market_breadth_below_threshold" if np.sum(eligible) else "no_eligible_symbol",
+            )
+            for index, symbol in enumerate(panel.symbols)
+        ]
     score[~eligible] = np.nan
     candidates = np.flatnonzero(np.isfinite(score))
     if not len(candidates):
-        return candidates
+        return candidates, [
+            SelectionAudit(str(symbol), None, None, False, bool(eligible[index]), "non_finite_score")
+            for index, symbol in enumerate(panel.symbols)
+        ]
     count = min(top_n or spec.top_n, len(candidates))
     chosen = candidates[np.argpartition(score[candidates], -count)[-count:]]
-    return chosen[np.argsort(score[chosen])[::-1]]
+    chosen = chosen[np.argsort(score[chosen])[::-1]]
+    ranks = {int(index): rank for rank, index in enumerate(candidates[np.argsort(score[candidates])[::-1]], start=1)}
+    chosen_set = {int(index) for index in chosen}
+    audit = []
+    for index, symbol in enumerate(panel.symbols):
+        if not eligible[index]:
+            reason = "ineligible_history_price_or_liquidity"
+        elif not np.isfinite(score[index]):
+            reason = "non_finite_score"
+        elif index in chosen_set:
+            reason = "selected"
+        else:
+            reason = "rank_below_cutoff"
+        audit.append(
+            SelectionAudit(
+                symbol=str(symbol),
+                score=float(score[index]) if np.isfinite(score[index]) else None,
+                rank=ranks.get(index),
+                selected=index in chosen_set,
+                eligible=bool(eligible[index]),
+                reason=reason,
+            )
+        )
+    return chosen, audit
+
+
+def select_symbols(panel: MarketPanel, spec: FactorSpec, signal_index: int, top_n: int | None = None) -> np.ndarray:
+    chosen, _ = select_symbols_with_audit(panel, spec, signal_index, top_n)
+    return chosen
 
 
 def _fees(side: str, amount: float) -> float:
