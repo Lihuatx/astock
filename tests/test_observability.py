@@ -204,6 +204,7 @@ class DashboardApiCase(unittest.TestCase):
             app = create_app(data_dir=root, static_dir=root / "missing", allowed_users={"yancey@example.com"}, ingest_token="secret")
             with TestClient(app) as client:
                 self.assertEqual(client.get("/healthz").status_code, 200)
+                self.assertEqual(client.get("/openapi.json").status_code, 404)
                 self.assertEqual(client.get("/api/v1/overview").status_code, 403)
                 headers = {"Tailscale-User-Login": "yancey@example.com"}
                 self.assertEqual(client.get("/api/v1/overview", headers=headers).status_code, 200)
@@ -260,6 +261,42 @@ class DashboardApiCase(unittest.TestCase):
                 self.assertEqual(overview["bundle"]["bundle_id"], bundle["bundle_id"])
                 self.assertIn("TEST", [item["code"] for item in overview["alerts"]])
 
+    def test_existing_bundle_file_bytes_must_match_idempotent_upload(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            app = create_app(data_dir=root, static_dir=root / "missing", ingest_token="secret")
+            bundle = sample_bundle()
+            path = f"/api/v1/ingest/bundles/{bundle['bundle_id']}"
+            headers = {"Authorization": "Bearer secret"}
+            with TestClient(app) as client:
+                self.assertEqual(client.put(path, json=bundle, headers=headers).status_code, 200)
+                stored = root / "bundles" / bundle["trading_day"] / f"{bundle['bundle_id']}.json"
+                stored.write_bytes(b"{}")
+                response = client.put(path, json=bundle, headers=headers)
+                self.assertEqual(response.status_code, 409)
+                self.assertIn("different file bytes", response.json()["detail"])
+
+    def test_late_old_status_does_not_replace_latest_view(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = DashboardStore(root / "server.db", root / "bundles")
+            newer = build_live_status(
+                source_id="windows-primary", generated_at=NOW + timedelta(seconds=30),
+                runner={"status": "NEW"}, sources={}, jobs={}, sync={}, alerts=[],
+            )
+            older = build_live_status(
+                source_id="windows-primary", generated_at=NOW,
+                runner={"status": "OLD"}, sources={}, jobs={}, sync={}, alerts=[],
+            )
+            store.save_live_status("windows-primary", newer, NOW)
+            store.save_live_status("windows-primary", older, NOW + timedelta(seconds=1))
+            self.assertEqual(store.live_statuses()[0]["runner"]["status"], "NEW")
+            receipt_count = store.connection.execute(
+                "SELECT COUNT(*) FROM ingest_receipts WHERE object_type='LIVE_STATUS'"
+            ).fetchone()[0]
+            self.assertEqual(receipt_count, 2)
+            store.close()
+
     def test_static_assets_require_tailscale_identity(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -300,7 +337,10 @@ class DashboardApiCase(unittest.TestCase):
             store.close()
             result = verify_backup(target)
             self.assertEqual(result["bundles"], 1)
-            self.assertGreaterEqual(result["files"], 2)
+            self.assertGreaterEqual(result["files"], 3)
+            version = json.loads((target / "version.json").read_text(encoding="utf-8"))
+            self.assertEqual(version["application"], "astock")
+            self.assertEqual(version["backup_schema_version"], 1)
             restored_root = root / "restored"
             restored_result = restore_backup(target, restored_root)
             self.assertEqual(restored_result["bundles"], 1)

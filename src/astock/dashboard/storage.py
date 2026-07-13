@@ -94,6 +94,13 @@ class DashboardStore:
         if existing:
             if existing["content_sha256"] != bundle["content_sha256"]:
                 raise ValueError("bundle id already exists with different content")
+            existing_path = Path(existing["path"])
+            if not existing_path.is_file():
+                raise ValueError("bundle index exists but immutable file is missing")
+            existing_bytes = existing_path.read_bytes()
+            if existing_bytes != encoded:
+                raise ValueError("bundle id already exists with different file bytes")
+            validate_review_bundle(json.loads(existing_bytes))
             return False
         target.write_bytes(encoded)
         with self.connection:
@@ -150,16 +157,23 @@ class DashboardStore:
                     raise ValueError("live status id already exists with different source")
                 return
             self.connection.execute(
-                """INSERT INTO live_status VALUES(?,?,?,?)
-                   ON CONFLICT(source_id) DO UPDATE SET
-                   generated_at=excluded.generated_at,received_at=excluded.received_at,payload=excluded.payload""",
-                (source_id, payload["generated_at"], received_at.isoformat(), _json(payload)),
-            )
-            self.connection.execute(
                 "INSERT INTO ingest_receipts VALUES(?,?,?,?)",
                 (receipt_id, "LIVE_STATUS", source_id, received_at.isoformat()),
             )
-            self._replace_alerts(source_id, payload.get("alerts", []), received_at)
+            current = self.connection.execute(
+                "SELECT generated_at FROM live_status WHERE source_id=?", (source_id,)
+            ).fetchone()
+            is_latest = current is None or datetime.fromisoformat(payload["generated_at"]) >= datetime.fromisoformat(
+                current["generated_at"]
+            )
+            if is_latest:
+                self.connection.execute(
+                    """INSERT INTO live_status VALUES(?,?,?,?)
+                       ON CONFLICT(source_id) DO UPDATE SET
+                       generated_at=excluded.generated_at,received_at=excluded.received_at,payload=excluded.payload""",
+                    (source_id, payload["generated_at"], received_at.isoformat(), _json(payload)),
+                )
+                self._replace_alerts(source_id, payload.get("alerts", []), received_at)
 
     def _replace_alerts(self, source_id: str, alerts: list[dict[str, Any]], received_at: datetime) -> None:
         active_ids = set()

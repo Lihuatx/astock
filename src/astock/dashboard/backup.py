@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import shutil
 import sqlite3
@@ -26,6 +27,24 @@ def create_backup(store: DashboardStore, target: Path) -> Path:
         connection.commit()
     finally:
         connection.close()
+    try:
+        application_version = importlib.metadata.version("astock")
+    except importlib.metadata.PackageNotFoundError:
+        application_version = "0.1.0"
+    (target / "version.json").write_text(
+        json.dumps(
+            {
+                "application": "astock",
+                "application_version": application_version,
+                "backup_schema_version": 1,
+                "dashboard_schema_version": 1,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
     _write_manifest(target)
     verify_backup(target)
     return target
@@ -35,6 +54,7 @@ def restore_backup(source: Path, target: Path) -> dict[str, int]:
     verify_backup(source)
     target.mkdir(parents=True, exist_ok=False)
     shutil.copy2(source / "server.db", target / "server.db")
+    shutil.copy2(source / "version.json", target / "version.json")
     shutil.copytree(source / "bundles", target / "bundles")
     connection = sqlite3.connect(target / "server.db")
     try:
@@ -54,6 +74,12 @@ def restore_backup(source: Path, target: Path) -> dict[str, int]:
 def verify_backup(target: Path) -> dict[str, int]:
     manifest_path = target / "manifest.sha256.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    version_path = target / "version.json"
+    if not version_path.is_file():
+        raise ValueError("backup version metadata is missing")
+    version = json.loads(version_path.read_text(encoding="utf-8"))
+    if version.get("application") != "astock" or version.get("backup_schema_version") != 1:
+        raise ValueError("unsupported backup version metadata")
     for relative, expected in manifest.items():
         path = target / relative
         if not path.is_file() or _sha256(path) != expected:

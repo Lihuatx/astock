@@ -37,7 +37,13 @@ def create_app(
         finally:
             application.state.store.close()
 
-    app = FastAPI(title="astock private dashboard", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = FastAPI(
+        title="astock private dashboard",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=lifespan,
+    )
 
     def store(request: Request) -> DashboardStore:
         return request.app.state.store
