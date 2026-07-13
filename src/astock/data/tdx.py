@@ -14,6 +14,7 @@ from astock.raw_store import JsonlRawStore
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 BOARD_LOT = 100
+TDX_AMOUNT_UNIT = Decimal("10000")
 
 
 class TdxError(RuntimeError):
@@ -37,7 +38,12 @@ class TdxClient:
         except Exception as exc:
             raise TdxError(f"TDX request failed: {method}: {exc}") from exc
         if self.raw_store:
-            self.raw_store.append("tdx", method, payload, received_at)
+            self.raw_store.append(
+                "tdx",
+                method,
+                {"request": params, "response": payload},
+                received_at,
+            )
         result = payload.get("result")
         if not isinstance(result, dict):
             raise TdxError(f"TDX invalid response: {method}")
@@ -115,7 +121,8 @@ class TdxClient:
                     low=Decimal(str(raw.get("Low", [])[index])),
                     close=Decimal(str(raw.get("Close", [])[index])),
                     volume=int(Decimal(str(raw.get("Volume", [0])[index]))),
-                    amount=Decimal(str(raw.get("Amount", [0])[index])),
+                    # TDX K 线成交量单位为股，成交额单位为万元；内部金额统一为元。
+                    amount=Decimal(str(raw.get("Amount", [0])[index])) * TDX_AMOUNT_UNIT,
                     source="tdx",
                     timestamp=timestamp,
                 )

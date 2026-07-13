@@ -131,6 +131,22 @@ class DataCase(unittest.TestCase):
         self.assertEqual(result.ask_volume, 3000)
         self.assertEqual(result.volume, 50_000)
 
+    def test_tdx_bar_time_and_amount_normalization(self) -> None:
+        client = TdxClient("http://unused")
+        client._call = lambda method, params: {  # type: ignore[method-assign]
+            "Value": {
+                "000001.SZ": {
+                    "Date": ["20260710"], "Time": ["093500"],
+                    "Open": ["10"], "High": ["10.1"], "Low": ["9.9"], "Close": ["10.05"],
+                    "Volume": ["795100"], "Amount": ["828.11"],
+                }
+            }
+        }
+        result = client.get_bars("000001.SZ", period="5m")
+        self.assertEqual(result[0].volume, 795_100)
+        self.assertEqual(result[0].amount, Decimal("8281100"))
+        self.assertEqual(result[0].timestamp.isoformat(), "2026-07-10T09:35:00+08:00")
+
     def test_raw_store(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = JsonlRawStore(Path(folder)).append("tdx", "snapshot", {"ok": True}, NOW)

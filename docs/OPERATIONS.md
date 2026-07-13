@@ -44,6 +44,14 @@ python -m astock.cli paper-prepare
 
 生成信号后，runner 会在收盘阶段保存账户快照、`ReviewBundle` 和 `LiveStatus`。自动模拟执行默认关闭；只有设置 `ASTOCK_PAPER_EXECUTION_ENABLED=true` 才会运行执行任务，该配置在完成 5 分钟成交复核和首次调仓验收前禁止启用。
 
+5 分钟复核与首次调仓的固定数据范围、执行窗口、成交量参与率、数值门槛、失败分类和证据要求见 `docs/INTRADAY_EXECUTION_REVIEW.md`。复核必须先保存原始 TDX 响应，再生成可重复的结构化结果和 Markdown 报告；分钟数据缺失不得用日线静默填补。首次调仓期间继续保持自动执行关闭，只允许人工运行和逐步核对。
+
+```powershell
+python -m astock.cli review-intraday --days 100 --refresh --env-file .env.demo
+```
+
+命令退出码为 `0` 表示三个策略全部通过；退出码为 `1` 表示复核已完成但至少一个策略未通过；行情请求或输入错误返回 `2`。TDX 本机缺少历史分钟线时，先在通达信客户端下载对应盘后数据，再使用 `--refresh` 重跑；不得改用日线补齐。
+
 ```powershell
 python -m astock.cli runner --once
 python -m astock.cli runner

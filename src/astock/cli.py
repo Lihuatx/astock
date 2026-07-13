@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import os
+import subprocess
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -32,6 +33,7 @@ from astock.observability.snapshot import initialize_observation_set
 from astock.observability.report import build_offline_report
 from astock.dashboard.storage import DashboardStore
 from astock.dashboard.backup import create_backup
+from astock.intraday_review import load_intraday_bars, planned_orders, run_intraday_review, write_intraday_report
 
 
 def _settings(args: argparse.Namespace) -> Settings:
@@ -353,6 +355,57 @@ def paper_execute(args: argparse.Namespace) -> int:
     return 0
 
 
+def intraday_review(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    report_path = settings.data_dir / "reports" / "strategy_research.json"
+    panel = MarketPanel.load(settings.data_dir / "research" / "market_panel.npz")
+    fundamentals = FundamentalPanel.load(settings.data_dir / "research" / "fundamental_panel.npz")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    orders, review_dates = planned_orders(panel, fundamentals, report, args.days)
+    client = TdxClient(settings.tdx_base_url, JsonlRawStore(settings.data_dir / "raw"))
+    bars = load_intraday_bars(
+        client,
+        (item.symbol for item in orders),
+        review_dates,
+        settings.data_dir / "research" / "intraday_5m",
+        refresh=args.refresh,
+    )
+    git_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=Path.cwd(),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    result = run_intraday_review(
+        orders,
+        review_dates,
+        bars,
+        [str(item["strategy"]) for item in report.get("selected") or []],
+        report_path=report_path,
+        git_sha=git_sha,
+    )
+    json_path = settings.data_dir / "reports" / "intraday_execution_review.json"
+    markdown_path = settings.data_dir.parent / "docs" / "INTRADAY_EXECUTION_REVIEW_RESULT.md"
+    write_intraday_report(result, json_path, markdown_path)
+    print(
+        json.dumps(
+            {
+                "all_passed": result["all_passed"],
+                "passed_strategies": result["passed_strategies"],
+                "failed_strategies": result["failed_strategies"],
+                "planned_order_count": result["planned_order_count"],
+                "data_start": result["data_start"],
+                "data_end": result["data_end"],
+                "report": str(markdown_path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0 if result["all_passed"] else 1
+
+
 def runner_command(args: argparse.Namespace) -> int:
     settings = _settings(args)
     runner = Runner(settings, Path.cwd(), args.env_file)
@@ -440,6 +493,11 @@ def build_parser() -> argparse.ArgumentParser:
     execute_parser = subparsers.add_parser("paper-execute", help="在下一交易日执行三个隔离账户的模拟计划")
     execute_parser.add_argument("--env-file", type=Path)
     execute_parser.set_defaults(handler=paper_execute)
+    intraday_parser = subparsers.add_parser("review-intraday", help="使用最近交易日的 5 分钟线复核开盘成交质量")
+    intraday_parser.add_argument("--days", type=int, default=100)
+    intraday_parser.add_argument("--refresh", action="store_true")
+    intraday_parser.add_argument("--env-file", type=Path)
+    intraday_parser.set_defaults(handler=intraday_review)
     runner_parser = subparsers.add_parser("runner", help="运行 P4 单实例观测与同步 runner")
     runner_parser.add_argument("--once", action="store_true")
     runner_parser.add_argument("--env-file", type=Path)
