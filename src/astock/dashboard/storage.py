@@ -161,11 +161,14 @@ class DashboardStore:
                 (receipt_id, "LIVE_STATUS", source_id, received_at.isoformat()),
             )
             current = self.connection.execute(
-                "SELECT generated_at FROM live_status WHERE source_id=?", (source_id,)
+                "SELECT generated_at,payload FROM live_status WHERE source_id=?", (source_id,)
             ).fetchone()
-            is_latest = current is None or datetime.fromisoformat(payload["generated_at"]) >= datetime.fromisoformat(
-                current["generated_at"]
+            candidate_key = (datetime.fromisoformat(payload["generated_at"]), payload["status_id"])
+            current_key = (
+                (datetime.fromisoformat(current["generated_at"]), json.loads(current["payload"])["status_id"])
+                if current else None
             )
+            is_latest = current_key is None or candidate_key > current_key
             if is_latest:
                 self.connection.execute(
                     """INSERT INTO live_status VALUES(?,?,?,?)

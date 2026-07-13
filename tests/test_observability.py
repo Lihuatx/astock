@@ -297,6 +297,24 @@ class DashboardApiCase(unittest.TestCase):
             self.assertEqual(receipt_count, 2)
             store.close()
 
+    def test_equal_time_status_order_is_deterministic(self) -> None:
+        statuses = [
+            build_live_status(
+                source_id="windows-primary", generated_at=NOW, runner={"status": label},
+                sources={}, jobs={}, sync={}, alerts=[],
+            )
+            for label in ("A", "B")
+        ]
+        expected = max(statuses, key=lambda item: item["status_id"])["status_id"]
+        for order in (statuses, list(reversed(statuses))):
+            with tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                store = DashboardStore(root / "server.db", root / "bundles")
+                for index, status in enumerate(order):
+                    store.save_live_status("windows-primary", status, NOW + timedelta(seconds=index))
+                self.assertEqual(store.live_statuses()[0]["status_id"], expected)
+                store.close()
+
     def test_static_assets_require_tailscale_identity(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -341,6 +359,14 @@ class DashboardApiCase(unittest.TestCase):
             version = json.loads((target / "version.json").read_text(encoding="utf-8"))
             self.assertEqual(version["application"], "astock")
             self.assertEqual(version["backup_schema_version"], 1)
+            manifest_path = target / "manifest.sha256.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            incomplete_manifest = dict(manifest)
+            incomplete_manifest.pop("server.db")
+            manifest_path.write_text(json.dumps(incomplete_manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "manifest file set mismatch"):
+                verify_backup(target)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             restored_root = root / "restored"
             restored_result = restore_backup(target, restored_root)
             self.assertEqual(restored_result["bundles"], 1)

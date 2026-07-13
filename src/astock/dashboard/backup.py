@@ -74,6 +74,13 @@ def restore_backup(source: Path, target: Path) -> dict[str, int]:
 def verify_backup(target: Path) -> dict[str, int]:
     manifest_path = target / "manifest.sha256.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    actual_files = {
+        path.relative_to(target).as_posix()
+        for path in target.rglob("*")
+        if path.is_file() and path.name != "manifest.sha256.json"
+    }
+    if set(manifest) != actual_files:
+        raise ValueError("backup manifest file set mismatch")
     version_path = target / "version.json"
     if not version_path.is_file():
         raise ValueError("backup version metadata is missing")
