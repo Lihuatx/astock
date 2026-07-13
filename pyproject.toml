@@ -18,6 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+intraday = ["pytdx==1.72"]
 vnpy = ["vnpy==4.4.0"]
 
 [project.scripts]

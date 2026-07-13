@@ -113,7 +113,7 @@ def _bar_from_dict(value: dict) -> Bar:
         close=Decimal(value["close"]),
         volume=int(value["volume"]),
         amount=Decimal(value["amount"]),
-        source="tdx",
+        source=str(value.get("source") or "tdx"),
     )
 
 
@@ -124,6 +124,7 @@ def load_intraday_bars(
     cache_dir: Path,
     *,
     refresh: bool,
+    fallback_client: object | None = None,
 ) -> dict[str, list[Bar]]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     start = review_dates[0].replace("-", "")
@@ -137,9 +138,37 @@ def load_intraday_bars(
                 result[symbol] = [_bar_from_dict(item) for item in payload["bars"]]
                 continue
         bars = client.get_bars(symbol, period="5m", start=start, end=end, count_=-1)
+        review_date_set = set(review_dates)
+        observed = {
+            (bar.trading_day.isoformat(), bar.timestamp)
+            for bar in bars
+            if bar.trading_day.isoformat() in review_date_set and _valid_session_bar(bar)
+        }
+        if fallback_client is not None and len(observed) < len(review_dates) * EXPECTED_BARS_PER_DAY:
+            fallback_bars = fallback_client.get_bars(symbol, start=start, end=end)
+            merged = {
+                bar.timestamp: bar
+                for bar in fallback_bars
+                if bar.timestamp is not None
+            }
+            merged.update(
+                {
+                    bar.timestamp: bar
+                    for bar in bars
+                    if bar.timestamp is not None
+                }
+            )
+            bars = [merged[key] for key in sorted(merged)]
         target.write_text(
             json.dumps(
-                {"symbol": symbol, "period": "5m", "start": start, "end": end, "bars": [_bar_to_dict(item) for item in bars]},
+                {
+                    "symbol": symbol,
+                    "period": "5m",
+                    "start": start,
+                    "end": end,
+                    "sources": sorted({item.source for item in bars}),
+                    "bars": [{**_bar_to_dict(item), "source": item.source} for item in bars],
+                },
                 ensure_ascii=False,
                 separators=(",", ":"),
             ),
@@ -342,6 +371,10 @@ def run_intraday_review(
             metrics.append(_strategy_metrics(strategy, details, _coverage(symbols, review_dates, bars_by_symbol)))
         windows[str(minutes)] = {"strategies": metrics, "details": details if minutes == 30 else []}
     main_metrics = windows["30"]["strategies"]
+    source_counts: dict[str, int] = {}
+    for bars in bars_by_symbol.values():
+        for bar in bars:
+            source_counts[bar.source] = source_counts.get(bar.source, 0) + 1
     return {
         "schema_version": 1,
         "generated_at": generated_at.isoformat(),
@@ -351,6 +384,7 @@ def run_intraday_review(
         "data_end": review_dates[-1],
         "trading_days": len(review_dates),
         "period": "5m",
+        "data_sources": dict(sorted(source_counts.items())),
         "execution_window_minutes": 30,
         "participation_rate": float(PARTICIPATION_RATE),
         "limit_slippage_bps": 20,
@@ -370,6 +404,7 @@ def write_intraday_report(result: dict, json_path: Path, markdown_path: Path) ->
         "# 100 天 5 分钟成交复核",
         "",
         f"- 数据区间：{result['data_start']}～{result['data_end']}，{result['trading_days']} 个交易日。",
+        "- 数据来源：" + "、".join(f"`{source}` {count:,} 根" for source, count in result.get("data_sources", {}).items()) + "。",
         f"- 计划订单：{result['planned_order_count']}；主窗口：开盘后 {result['execution_window_minutes']} 分钟。",
         f"- 参与率：{result['participation_rate']:.0%}；限价滑点：单边 {result['limit_slippage_bps']}BP。",
         f"- 总结论：{'通过' if result['all_passed'] else '不通过'}。",

@@ -8,7 +8,8 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from astock.intraday_review import ReviewOrder, run_intraday_review, write_intraday_report
+from astock.intraday_review import ReviewOrder, load_intraday_bars, run_intraday_review, write_intraday_report
+from astock.data.pytdx import PytdxMinuteClient
 from astock.models import Bar
 
 
@@ -36,6 +37,69 @@ def bars(symbol: str, day: str, *, low: str = "10", high: str = "10.03", volume:
 
 
 class IntradayReviewCase(unittest.TestCase):
+    def test_historical_fallback_merges_without_overwriting_tdx(self) -> None:
+        tdx_bar = bars("000001.SZ", "2026-07-10")[0]
+        fallback_bars = [
+            *[
+                Bar(**{**item.__dict__, "source": "pytdx"})
+                for item in bars("000001.SZ", "2026-07-09")
+            ],
+            Bar(**{**tdx_bar.__dict__, "open": Decimal("9"), "source": "pytdx"}),
+        ]
+
+        class TdxStub:
+            def get_bars(self, *args, **kwargs):
+                return [tdx_bar]
+
+        class FallbackStub:
+            def get_bars(self, *args, **kwargs):
+                return fallback_bars
+
+        with tempfile.TemporaryDirectory() as folder:
+            result = load_intraday_bars(
+                TdxStub(),
+                ["000001.SZ"],
+                ["2026-07-09", "2026-07-10"],
+                Path(folder),
+                refresh=True,
+                fallback_client=FallbackStub(),
+            )["000001.SZ"]
+            payload = json.loads((Path(folder) / "000001.SZ.json").read_text(encoding="utf-8"))
+        overlap = next(item for item in result if item.timestamp == tdx_bar.timestamp)
+        self.assertEqual(overlap.source, "tdx")
+        self.assertEqual(overlap.open, Decimal("10"))
+        self.assertEqual(payload["sources"], ["pytdx", "tdx"])
+
+    def test_pytdx_paginates_until_requested_start(self) -> None:
+        def row(timestamp: str) -> dict:
+            return {
+                "datetime": timestamp,
+                "open": 10,
+                "high": 10.1,
+                "low": 9.9,
+                "close": 10,
+                "vol": 1000,
+                "amount": 10000,
+            }
+
+        class ApiStub:
+            def connect(self, *args, **kwargs):
+                return self
+
+            def get_security_bars(self, category, market, code, offset, count):
+                return {
+                    0: [row("2026-03-01 09:35")],
+                    800: [row("2026-02-06 09:35")],
+                }.get(offset, [])
+
+            def disconnect(self):
+                return None
+
+        client = PytdxMinuteClient(hosts=[("test", "127.0.0.1", 7709)], api_factory=ApiStub)
+        result = client.get_bars("000001.SZ", "20260206", "20260301")
+        self.assertEqual([item.timestamp.strftime("%Y-%m-%d %H:%M") for item in result], ["2026-02-06 09:35", "2026-03-01 09:35"])
+        self.assertTrue(all(item.source == "pytdx" for item in result))
+
     def test_volume_is_not_reused_across_accounts(self) -> None:
         orders = [
             ReviewOrder(strategy, "2026-07-09", "2026-07-10", "000001.SZ", "BUY", 6000, "10.02")

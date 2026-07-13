@@ -12,6 +12,7 @@ from pathlib import Path
 
 from astock.config import Settings
 from astock.data.tdx import TdxClient, TdxError
+from astock.data.pytdx import PytdxMinuteClient, PytdxError
 from astock.data.ths import ThsClient, ThsError
 from astock.raw_store import JsonlRawStore
 from astock.broker import AShareSimBroker
@@ -362,13 +363,15 @@ def intraday_review(args: argparse.Namespace) -> int:
     fundamentals = FundamentalPanel.load(settings.data_dir / "research" / "fundamental_panel.npz")
     report = json.loads(report_path.read_text(encoding="utf-8"))
     orders, review_dates = planned_orders(panel, fundamentals, report, args.days)
-    client = TdxClient(settings.tdx_base_url, JsonlRawStore(settings.data_dir / "raw"))
+    raw_store = JsonlRawStore(settings.data_dir / "raw")
+    client = TdxClient(settings.tdx_base_url, raw_store)
     bars = load_intraday_bars(
         client,
         (item.symbol for item in orders),
         review_dates,
         settings.data_dir / "research" / "intraday_5m",
         refresh=args.refresh,
+        fallback_client=PytdxMinuteClient(raw_store),
     )
     git_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -523,7 +526,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return int(args.handler(args))
-    except (TdxError, ThsError, ValueError) as exc:
+    except (TdxError, ThsError, PytdxError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
