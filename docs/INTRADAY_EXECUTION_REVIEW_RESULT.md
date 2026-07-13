@@ -1,6 +1,7 @@
 # 100 天 5 分钟成交复核
 
 - 数据区间：2026-02-06～2026-07-10，100 个交易日。
+- 数据来源：`pytdx` 30,096 根、`tdx` 61,104 根。
 - 计划订单：25；主窗口：开盘后 30 分钟。
 - 参与率：10%；限价滑点：单边 20BP。
 - 总结论：不通过。
@@ -9,33 +10,33 @@
 
 | 策略 | 数据覆盖 | 订单 | 完整／部分／未成 | 金额成交率 | 完整订单率 | 买入 P95 | 卖出 P95 | 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| cash_conversion | 67.00% | 15 | 0／0／15 | 0.00% | 0.00% | 证据不足 | 证据不足 | 不通过 |
-| cash_quality_value | 67.00% | 10 | 9／0／1 | 89.73% | 90.00% | 0.00BP | 0.00BP | 不通过 |
+| cash_conversion | 100.00% | 15 | 14／0／1 | 93.58% | 93.33% | 17.00BP | 0.00BP | 不通过 |
+| cash_quality_value | 100.00% | 10 | 9／0／1 | 89.73% | 90.00% | 0.00BP | 0.00BP | 不通过 |
 | fundamental_value | 0.00% | 0 | 0／0／0 | 0.00% | 0.00% | 证据不足 | 证据不足 | 不通过 |
 
 ## 执行窗口对比
 
 | 窗口 | 策略 | 金额成交率 | 完整订单率 |
 | ---: | --- | ---: | ---: |
-| 5 分钟 | cash_conversion | 0.00% | 0.00% |
+| 5 分钟 | cash_conversion | 93.58% | 93.33% |
 | 5 分钟 | cash_quality_value | 89.73% | 90.00% |
 | 5 分钟 | fundamental_value | 0.00% | 0.00% |
-| 15 分钟 | cash_conversion | 0.00% | 0.00% |
+| 15 分钟 | cash_conversion | 93.58% | 93.33% |
 | 15 分钟 | cash_quality_value | 89.73% | 90.00% |
 | 15 分钟 | fundamental_value | 0.00% | 0.00% |
-| 30 分钟 | cash_conversion | 0.00% | 0.00% |
+| 30 分钟 | cash_conversion | 93.58% | 93.33% |
 | 30 分钟 | cash_quality_value | 89.73% | 90.00% |
 | 30 分钟 | fundamental_value | 0.00% | 0.00% |
 
 ## 证据说明
 
 - 输入报告 SHA256：`da7342dcdd2fd5ab16b9b9c12de3935bd1fc6de85901c3d8c68342919a88c464`。
-- 代码 commit：`efae05657ae02e865f9a7898096bedb0dac5c487`。
-- 生成时间：2026-07-13T12:30:39.605601+08:00。
+- 代码 commit：`b7ee3f3a6432446e2cd894980b70ae74190becaa`。
+- 生成时间：2026-07-14T00:28:38.473583+08:00。
 - 缺失分钟线不推定成交；任一方向没有成交时，该方向标记为证据不足。
 
 ## 不可成交原因
 
-- `cash_conversion`：missing_data=15。
+- `cash_conversion`：filled=14、limit_not_touched=1。
 - `cash_quality_value`：filled=9、limit_not_touched=1。
 - `fundamental_value`：无计划订单。
