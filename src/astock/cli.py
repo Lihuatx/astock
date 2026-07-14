@@ -6,7 +6,7 @@ import sys
 import tempfile
 import os
 import subprocess
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
@@ -295,16 +295,49 @@ def paper_prepare(args: argparse.Namespace) -> int:
 def paper_signals(args: argparse.Namespace) -> int:
     settings = _settings(args)
     report_path = settings.data_dir / "reports" / "strategy_research.json"
-    panel = MarketPanel.load(settings.data_dir / "research" / "market_panel.npz")
+    market_path = settings.data_dir / "research" / "market_panel.npz"
+    panel = MarketPanel.load(market_path)
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    completed_end = now.date() if now.time() >= time(15, 10) else now.date() - timedelta(days=1)
+    tdx_client = TdxClient(settings.tdx_base_url, JsonlRawStore(settings.data_dir / "raw"))
+    missing_dates = tdx_client.get_trading_dates(
+        (date.fromisoformat(str(panel.dates[-1])) + timedelta(days=1)).strftime("%Y%m%d"),
+        completed_end.strftime("%Y%m%d"),
+    )
+    inputs_refreshed = bool(missing_dates)
+    if inputs_refreshed:
+        panel = fetch_market_panel(
+            tdx_client,
+            str(panel.dates[0]).replace("-", ""),
+            missing_dates[-1].strftime("%Y%m%d"),
+            market_path,
+            symbols=panel.symbols.tolist(),
+        )
     fundamental_path = settings.data_dir / "research" / "fundamental_panel.npz"
-    fundamentals = FundamentalPanel.load(fundamental_path) if fundamental_path.exists() else None
-    if fundamentals is not None and settings.tushare_base_token:
+    fundamentals = None
+    if settings.tushare_base_token:
         client = TushareProxyClient(
             settings.tushare_base_url,
             settings.tushare_base_token,
             settings.data_dir / "tushare" / "cache",
         )
+        if inputs_refreshed:
+            fundamentals = build_fundamental_panel(
+                client,
+                panel.dates,
+                panel.symbols,
+                research_signal_dates(panel),
+                fundamental_path,
+            )
+        elif fundamental_path.exists():
+            fundamentals = FundamentalPanel.load(fundamental_path)
+        if fundamentals is None:
+            raise ValueError("fundamental panel is required for the current strategy set")
         fundamentals = update_valuation_date(client, fundamentals, str(panel.dates[-1]), fundamental_path)
+    elif inputs_refreshed:
+        raise ValueError("TUSHARE_BASE_TOKEN is required to refresh point-in-time fundamentals")
+    elif fundamental_path.exists():
+        fundamentals = FundamentalPanel.load(fundamental_path)
     observability, set_id, root = _paper_context(settings)
     try:
         target_path = root / "pending_signals.json"
@@ -317,21 +350,45 @@ def paper_signals(args: argparse.Namespace) -> int:
             schedule_root=manager.root,
         )
         signal_day = date.fromisoformat(plan["signal_date"])
-        future_dates = TdxClient(settings.tdx_base_url).get_trading_dates(
+        future_dates = tdx_client.get_trading_dates(
             (signal_day + timedelta(days=1)).strftime("%Y%m%d"),
             (signal_day + timedelta(days=14)).strftime("%Y%m%d"),
         )
-        plan["earliest_execution_date"] = future_dates[0].isoformat() if future_dates else None
+        candidate = signal_day + timedelta(days=1)
+        while candidate.weekday() >= 5:
+            candidate += timedelta(days=1)
+        plan["earliest_execution_date"] = (future_dates[0] if future_dates else candidate).isoformat()
+        plan["inputs_refreshed"] = inputs_refreshed
         target_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
-        observability.append_event(
-            "SIGNAL_PLAN",
-            datetime.now(ZoneInfo("Asia/Shanghai")),
-            {"strategy_set_id": set_id, "signal_date": plan["signal_date"], "strategies": plan["strategies"]},
-            event_id=f"signal-plan:{set_id}:{plan['signal_date']}",
-        )
+        event_id = f"signal-plan:{set_id}:{plan['signal_date']}"
+        event_payload = {
+            "strategy_set_id": set_id,
+            "signal_date": plan["signal_date"],
+            "strategies": plan["strategies"],
+        }
+        existing_event = observability.event(event_id)
+        if existing_event and existing_event["payload"] != event_payload:
+            raise ValueError(f"signal plan {event_id!r} conflicts with its registered facts")
+        if not existing_event:
+            observability.append_event(
+                "SIGNAL_PLAN",
+                datetime.now(ZoneInfo("Asia/Shanghai")),
+                event_payload,
+                event_id=event_id,
+            )
     finally:
         observability.close()
-    print(json.dumps(plan, ensure_ascii=False, indent=2))
+    print(json.dumps({
+        "strategy_set_id": plan["strategy_set_id"],
+        "signal_date": plan["signal_date"],
+        "earliest_execution_date": plan["earliest_execution_date"],
+        "strategies": [
+            {"strategy": item["strategy"], "symbol_count": len(item["symbols"]), "symbols": item["symbols"]}
+            for item in plan["strategies"]
+        ],
+        "skipped": plan["skipped"],
+        "plan_path": str(target_path),
+    }, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -345,10 +402,11 @@ def paper_execute(args: argparse.Namespace) -> int:
         now = datetime.now(ZoneInfo("Asia/Shanghai"))
         results = manager.execute_plan(
             root / "pending_signals.json",
-            TdxClient(settings.tdx_base_url),
+            TdxClient(settings.tdx_base_url, JsonlRawStore(settings.data_dir / "raw")),
             now.date(),
             now,
             expected_strategy_set_id=set_id,
+            intraday_confirmation_client=PytdxMinuteClient(JsonlRawStore(settings.data_dir / "raw")),
         )
     finally:
         observability.close()

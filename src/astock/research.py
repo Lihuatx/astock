@@ -60,8 +60,9 @@ def fetch_market_panel(
     end: str,
     cache_path: Path,
     batch_size: int = 10,
+    symbols: list[str] | None = None,
 ) -> MarketPanel:
-    symbols = [symbol for symbol in client.get_stock_list() if is_main_board(symbol)]
+    symbols = symbols or [symbol for symbol in client.get_stock_list() if is_main_board(symbol)]
     trading_dates = client.get_trading_dates(start, end)
     dates = np.array([item.isoformat() for item in trading_dates], dtype="U10")
     date_index = {value: index for index, value in enumerate(dates.tolist())}

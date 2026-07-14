@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import numpy as np
+import time as clock
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_FLOOR
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -207,6 +208,7 @@ class MultiStrategyPaperAccounts:
         trading_day: date,
         executed_at: datetime,
         expected_strategy_set_id: str | None = None,
+        intraday_confirmation_client: object | None = None,
     ) -> list[dict]:
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
         expected = expected_strategy_set_id or self.strategy_set_id
@@ -222,11 +224,41 @@ class MultiStrategyPaperAccounts:
         signal_day = date.fromisoformat(plan["signal_date"])
         if trading_day <= signal_day:
             raise ValueError("paper execution must be after the signal date")
+        earliest_text = str(plan.get("earliest_execution_date") or "")
+        if not earliest_text:
+            raise ValueError("paper execution plan has no confirmed execution date")
+        earliest_execution_date = date.fromisoformat(earliest_text)
+        if trading_day != earliest_execution_date:
+            raise ValueError("paper execution date does not match the confirmed earliest execution date")
+        execution_time = executed_at.timetz().replace(tzinfo=None)
+        if not time(9, 30) <= execution_time <= time(10, 0):
+            raise ValueError("paper execution is only allowed from 09:30 through 10:00")
         confirmed = client.get_trading_dates(
             (signal_day + timedelta(days=1)).strftime("%Y%m%d"), trading_day.strftime("%Y%m%d")
         )
         if trading_day not in confirmed:
-            raise ValueError("paper execution date is not confirmed by TDX trading calendar")
+            first_probe = client.get_snapshot("000001.SZ")
+            clock.sleep(2)
+            second_probe = client.get_snapshot("000001.SZ")
+            live_market = (
+                first_probe.received_at.date() == trading_day
+                and second_probe.received_at.date() == trading_day
+                and first_probe.bid_price > 0
+                and first_probe.ask_price > 0
+                and second_probe.bid_price > 0
+                and second_probe.ask_price > 0
+                and second_probe.volume > first_probe.volume
+            )
+            if not live_market and intraday_confirmation_client is not None:
+                intraday_bars = intraday_confirmation_client.get_bars(
+                    "000001.SZ", trading_day.strftime("%Y%m%d"), trading_day.strftime("%Y%m%d")
+                )
+                live_market = any(
+                    bar.trading_day == trading_day and bar.timestamp is not None and bar.volume > 0
+                    for bar in intraday_bars
+                )
+            if not live_market:
+                raise ValueError("paper execution date is not confirmed by TDX calendar or live intraday evidence")
         results: list[dict] = []
         for strategy_plan in plan["strategies"]:
             strategy = strategy_plan["strategy"]

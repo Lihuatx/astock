@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 import json
 import tempfile
 from dataclasses import replace
@@ -349,6 +350,7 @@ class ResearchCausalityCase(unittest.TestCase):
             plan_path.write_text(
                 json.dumps({
                     "signal_date": "2025-01-02",
+                    "earliest_execution_date": "2025-01-03",
                     "strategies": [{"strategy": "alpha", "symbols": [], "rebalance_days": 20}],
                 }),
                 encoding="utf-8",
@@ -369,6 +371,84 @@ class ResearchCausalityCase(unittest.TestCase):
                 datetime(2025, 1, 3, 9, 32),
             )
             self.assertEqual(second[0]["reason"], "signal_already_executed")
+
+    def test_paper_execution_rejects_wrong_date_and_time_window(self) -> None:
+        class FakeClient:
+            @staticmethod
+            def get_trading_dates(start, end):
+                return [date(2025, 1, 3)]
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            plan_path = root / "plan.json"
+            plan_path.write_text(
+                json.dumps({
+                    "signal_date": "2025-01-02",
+                    "earliest_execution_date": "2025-01-03",
+                    "strategies": [],
+                }),
+                encoding="utf-8",
+            )
+            manager = MultiStrategyPaperAccounts(root / "paper", Decimal("100000"))
+            with self.assertRaisesRegex(ValueError, "confirmed earliest execution date"):
+                manager.execute_plan(
+                    plan_path,
+                    FakeClient(),
+                    date(2025, 1, 6),
+                    datetime(2025, 1, 6, 9, 31),
+                )
+            with self.assertRaisesRegex(ValueError, "09:30 through 10:00"):
+                manager.execute_plan(
+                    plan_path,
+                    FakeClient(),
+                    date(2025, 1, 3),
+                    datetime(2025, 1, 3, 10, 1),
+                )
+
+    def test_paper_execution_accepts_current_pytdx_bar_when_calendar_lags(self) -> None:
+        class FakeClient:
+            @staticmethod
+            def get_trading_dates(start, end):
+                return []
+
+            @staticmethod
+            def get_snapshot(symbol):
+                return type("Probe", (), {
+                    "received_at": datetime(2025, 1, 3, 9, 31),
+                    "bid_price": Decimal("10"),
+                    "ask_price": Decimal("10.01"),
+                    "volume": 100,
+                })()
+
+        class FakeIntradayClient:
+            @staticmethod
+            def get_bars(symbol, start, end):
+                return [type("LiveBar", (), {
+                    "trading_day": date(2025, 1, 3),
+                    "timestamp": datetime(2025, 1, 3, 9, 35),
+                    "volume": 1000,
+                })()]
+
+        with tempfile.TemporaryDirectory() as folder:
+            plan_path = Path(folder) / "plan.json"
+            plan_path.write_text(
+                json.dumps({
+                    "signal_date": "2025-01-02",
+                    "earliest_execution_date": "2025-01-03",
+                    "strategies": [],
+                }),
+                encoding="utf-8",
+            )
+            manager = MultiStrategyPaperAccounts(Path(folder) / "paper", Decimal("100000"))
+            with patch("astock.paper.clock.sleep"):
+                result = manager.execute_plan(
+                    plan_path,
+                    FakeClient(),
+                    date(2025, 1, 3),
+                    datetime(2025, 1, 3, 9, 31),
+                    intraday_confirmation_client=FakeIntradayClient(),
+                )
+            self.assertEqual(result, [])
 
     def test_fundamentals_become_available_after_announcement(self) -> None:
         class FakeClient:

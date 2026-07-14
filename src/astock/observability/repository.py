@@ -138,6 +138,16 @@ class ObservabilityRepository:
         )
         self.connection.commit()
 
+    def strategy_set(self, strategy_set_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT * FROM strategy_sets WHERE strategy_set_id=?", (strategy_set_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["payload"] = json.loads(item["payload"])
+        return item
+
     def activate_strategy_set(self, strategy_set_id: str) -> None:
         with self.connection:
             self.connection.execute(
@@ -183,6 +193,22 @@ class ObservabilityRepository:
             args = (status,)
         sql += " ORDER BY created_at, account_id"
         return [dict(row) for row in self.connection.execute(sql, args)]
+
+    def account(self, account_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT * FROM account_registry WHERE account_id=?", (account_id,)
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def event(self, event_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT * FROM audit_events WHERE event_id=?", (event_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["payload"] = json.loads(item["payload"])
+        return item
 
     def start_run(self, job_type: str, started_at: datetime, run_id: str | None = None) -> str:
         run_id = run_id or uuid.uuid4().hex

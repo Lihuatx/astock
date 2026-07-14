@@ -191,7 +191,13 @@ class ObservabilityCase(unittest.TestCase):
             set_id, _ = initialize_observation_set(
                 repository, report, paper, Decimal("100000"), Path.cwd(), NOW
             )
+            repeated_set_id, _ = initialize_observation_set(
+                repository, report, paper, Decimal("100000"), Path.cwd(), NOW.replace(second=1)
+            )
             self.assertEqual(len(repository.accounts("LEGACY")), 1)
+            self.assertEqual(len(repository.accounts()), 3)
+            self.assertEqual(repeated_set_id, set_id)
+            self.assertEqual(len(repository.events()), 1)
             self.assertEqual(repository.events()[0]["event_type"], "STALE_SIGNAL_PLAN")
             self.assertTrue(set_id.startswith("set-"))
             repository.close()

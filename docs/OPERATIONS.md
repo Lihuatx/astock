@@ -42,6 +42,8 @@ python -m astock.cli paper-prepare
 
 该命令使用研究报告 SHA256 生成 `strategy_set_id`，在 `data/paper/sets/` 下创建新账户代次，并将原有账户登记为 legacy。不会移动或删除旧账户。
 
+`paper-signals` 生成计划前必须把市场面板和点时基本面刷新到最近一个已经完整收盘的交易日，但不得重跑或替换冻结研究报告中的策略集合。计划优先采用 TDX 已公布的下一交易日；盘前 TDX 尚未公布时只生成下一工作日候选。`paper-execute` 只接受计划声明的 `earliest_execution_date`，且只允许在该日 09:30～10:00 人工运行；执行时必须由 TDX 当日交易日历、连续快照成交量增长或 `pytdx` 当日分钟线之一确认开市，价格、买卖盘和成交量必须有效，原始响应必须落盘。错过日期或窗口必须废弃计划并在新的完整收盘日后重新生成。
+
 生成信号后，runner 会在收盘阶段保存账户快照、`ReviewBundle` 和 `LiveStatus`。自动模拟执行默认关闭；只有设置 `ASTOCK_PAPER_EXECUTION_ENABLED=true` 才会运行执行任务，该配置在完成 5 分钟成交复核和首次调仓验收前禁止启用。
 
 5 分钟复核与首次调仓的固定数据范围、执行窗口、成交量参与率、数值门槛、失败分类和证据要求见 `docs/INTRADAY_EXECUTION_REVIEW.md`。复核必须先保存 TdxQuant 或 `pytdx` 原始响应，再生成可重复的结构化结果和 Markdown 报告；分钟数据缺失不得用日线静默填补。首次调仓期间继续保持自动执行关闭，只允许人工运行和逐步核对。
