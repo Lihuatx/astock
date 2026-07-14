@@ -52,6 +52,12 @@ def _tdx_client(settings: Settings, raw_store: JsonlRawStore | None = None) -> T
     return TdxClient(settings.tdx_base_url, raw_store, transport=_tdx_transport(settings))
 
 
+def _tdx_task_exit_code(result: dict[str, object], *, requires_saved: bool = False) -> int:
+    if requires_saved:
+        return 0 if result.get("saved") is True else 1
+    return 1 if result.get("reason") else 0
+
+
 def _paper_context(settings: Settings) -> tuple[ObservabilityRepository, str, Path]:
     report_path = settings.data_dir / "reports" / "strategy_research.json"
     observability = ObservabilityRepository(settings.data_dir / "observability" / "observability.db")
@@ -432,7 +438,7 @@ def paper_execute(args: argparse.Namespace) -> int:
     finally:
         observability.close()
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    return _tdx_task_exit_code(result)
 
 
 def paper_review(args: argparse.Namespace) -> int:
@@ -460,7 +466,7 @@ def paper_review(args: argparse.Namespace) -> int:
     finally:
         observability.close()
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    return _tdx_task_exit_code(result, requires_saved=True)
 
 
 def intraday_review(args: argparse.Namespace) -> int:

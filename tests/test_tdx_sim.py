@@ -8,6 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from astock.data.tdx_sim import JsonlErrorLog, TdxSimClient, TdxSimError, TdxSimulationGuardError, TdxSimSnapshot
+from astock.cli import _tdx_task_exit_code
 from astock.models import Quote, Side
 from astock.observability.repository import ObservabilityRepository
 from astock.tdx_sim_execution import execute_tdx_sim_plan, review_tdx_sim_day
@@ -17,6 +18,12 @@ NOW = datetime.fromisoformat("2026-07-14T09:35:00+08:00")
 
 
 class TdxSimClientCase(unittest.TestCase):
+    def test_task_exit_code_only_fails_for_top_level_execution_or_unsaved_review(self) -> None:
+        self.assertEqual(_tdx_task_exit_code({"errors": 1}), 0)
+        self.assertEqual(_tdx_task_exit_code({"reason": "account unavailable"}), 1)
+        self.assertEqual(_tdx_task_exit_code({"saved": True, "ok": False}, requires_saved=True), 0)
+        self.assertEqual(_tdx_task_exit_code({"saved": False}, requires_saved=True), 1)
+
     def test_unconfirmed_account_is_rejected_and_logged(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             called = []
