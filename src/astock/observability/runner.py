@@ -37,6 +37,40 @@ class Runner:
     def close(self) -> None:
         self.observability.close()
 
+    def _run_command(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+        process = subprocess.Popen(
+            args,
+            cwd=self.workspace,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        deadline = time.monotonic() + 600
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.kill()
+                stdout, stderr = process.communicate()
+                raise subprocess.TimeoutExpired(args, 600, output=stdout, stderr=stderr)
+            try:
+                stdout, stderr = process.communicate(timeout=min(30, remaining))
+            except subprocess.TimeoutExpired:
+                now = datetime.now(SHANGHAI)
+                renewed = self.observability.acquire_lease(
+                    "primary-runner", self.owner_id, now, now + timedelta(seconds=90)
+                )
+                if not renewed:
+                    process.kill()
+                    process.communicate()
+                    raise RuntimeError("astock runner lost its lease while a child task was running")
+                continue
+            completed = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+            if process.returncode:
+                raise subprocess.CalledProcessError(
+                    process.returncode, args, output=stdout, stderr=stderr
+                )
+            return completed
+
     def _run_cli_job(self, job_type: str, command: str, now: datetime) -> bool:
         if self.observability.has_successful_run(job_type, now.date().isoformat()):
             return True
@@ -54,7 +88,7 @@ class Runner:
         error = None
         completed = None
         try:
-            completed = subprocess.run(args, cwd=self.workspace, check=True, timeout=600, capture_output=True, text=True)
+            completed = self._run_command(args)
         except Exception as exc:
             error = exc
         self.observability.finish_run(run_id, datetime.now(SHANGHAI), error)

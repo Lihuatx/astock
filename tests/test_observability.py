@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -236,6 +238,39 @@ class ObservabilityCase(unittest.TestCase):
             self.assertTrue(repository.acquire_lease("runner", "one", NOW, NOW.replace(minute=1)))
             self.assertFalse(repository.acquire_lease("runner", "two", NOW, NOW.replace(minute=1)))
             repository.close()
+
+    def test_runner_renews_lease_while_child_job_is_running(self) -> None:
+        class Process:
+            returncode = 0
+            calls = 0
+
+            def communicate(self, timeout=None):
+                self.calls += 1
+                if self.calls == 1:
+                    raise subprocess.TimeoutExpired(["python"], timeout)
+                return "{}", ""
+
+            def kill(self):
+                raise AssertionError("successful child must not be killed")
+
+        class Lease:
+            def __init__(self):
+                self.renewals = []
+
+            def acquire_lease(self, name, owner, now, expires_at):
+                self.renewals.append((name, owner, now, expires_at))
+                return True
+
+        runner = object.__new__(Runner)
+        runner.workspace = Path.cwd()
+        runner.owner_id = "runner-test"
+        runner.observability = Lease()
+        process = Process()
+        with patch("astock.observability.runner.subprocess.Popen", return_value=process):
+            completed = runner._run_command(["python", "job.py"])
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(len(runner.observability.renewals), 1)
+        self.assertEqual(runner.observability.renewals[0][0:2], ("primary-runner", "runner-test"))
 
     def test_runner_executes_intraday_and_reviews_after_close(self) -> None:
         class Lease:
