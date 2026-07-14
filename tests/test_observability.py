@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ from astock.dashboard.storage import DashboardStore
 from astock.dashboard.backup import create_backup, restore_backup, verify_backup
 from astock.observability.bundle import build_live_status, build_review_bundle, validate_review_bundle, write_review_bundle
 from astock.observability.repository import ObservabilityRepository, SCHEMA_VERSION
+from astock.observability.research_bundle import build_research_bundle, validate_research_bundle
 from astock.observability.report import build_offline_report
 from astock.observability.snapshot import capture_account_snapshot, initialize_observation_set
 from astock.observability.sync import dispatch_sync
@@ -52,7 +54,32 @@ def sample_bundle() -> dict:
     )
 
 
+def sample_research_bundle() -> dict:
+    return build_research_bundle(
+        category="TOPIC",
+        title="执行链专题",
+        summary="复核执行链。",
+        conclusion="继续观察。",
+        status="OBSERVE",
+        source_path="docs/topic.md",
+        source_commit="abc123",
+        data_cutoff="2026-07-12",
+        published_at=NOW.isoformat(),
+        body_markdown="# 执行链专题\n\n正文",
+    )
+
+
 class ObservabilityCase(unittest.TestCase):
+    def test_research_bundle_is_deterministic_and_verified(self) -> None:
+        first = sample_research_bundle()
+        second = sample_research_bundle()
+        self.assertEqual(first, second)
+        validate_research_bundle(first)
+        changed = dict(first)
+        changed["title"] = "被篡改"
+        with self.assertRaisesRegex(ValueError, "content hash mismatch"):
+            validate_research_bundle(changed)
+
     def test_schema_bundle_stability_and_immutability(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -272,7 +299,7 @@ class ObservabilityCase(unittest.TestCase):
         self.assertEqual(len(runner.observability.renewals), 1)
         self.assertEqual(runner.observability.renewals[0][0:2], ("primary-runner", "runner-test"))
 
-    def test_runner_executes_intraday_and_reviews_after_close(self) -> None:
+    def test_runner_does_not_send_orders_after_close_and_runs_review(self) -> None:
         class Lease:
             @staticmethod
             def acquire_lease(name, owner, now, expires_at):
@@ -286,9 +313,25 @@ class ObservabilityCase(unittest.TestCase):
         runner._run_cli_job = lambda job_type, command, now: calls.append((job_type, command)) or True
         runner._publish_status = lambda now: calls.append(("status", "publish"))
         runner.tick(datetime(2026, 7, 14, 15, 21, tzinfo=ZoneInfo("Asia/Shanghai")))
-        self.assertIn(("paper_execute", "paper-execute"), calls)
+        self.assertNotIn(("paper_execute", "paper-execute"), calls)
         self.assertIn(("tdx_sim_review", "paper-review"), calls)
         self.assertNotIn(("account_snapshot", "account_snapshot"), calls)
+
+    def test_runner_sends_orders_only_in_continuous_auction_window(self) -> None:
+        class Lease:
+            @staticmethod
+            def acquire_lease(name, owner, now, expires_at):
+                return True
+
+        runner = object.__new__(Runner)
+        runner.observability = Lease()
+        runner.owner_id = "runner-test"
+        runner.settings = SimpleNamespace(paper_execution_enabled=True)
+        calls = []
+        runner._run_cli_job = lambda job_type, command, now: calls.append((job_type, command)) or True
+        runner._publish_status = lambda now: None
+        runner.tick(datetime(2026, 7, 14, 9, 40, tzinfo=ZoneInfo("Asia/Shanghai")))
+        self.assertIn(("paper_execute", "paper-execute"), calls)
 
     def test_new_strategy_set_retires_old_current_accounts(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
@@ -330,6 +373,50 @@ class ObservabilityCase(unittest.TestCase):
 
 
 class DashboardApiCase(unittest.TestCase):
+    def test_dashboard_store_migrates_v1_index_to_v2(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            connection = sqlite3.connect(root / "server.db")
+            connection.execute("CREATE TABLE schema_meta(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+            connection.execute("INSERT INTO schema_meta VALUES(1,?)", (NOW.isoformat(),))
+            connection.commit()
+            connection.close()
+            store = DashboardStore(root / "server.db", root / "bundles")
+            try:
+                version = store.connection.execute("SELECT max(version) FROM schema_meta").fetchone()[0]
+                table = store.connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='research_reports'"
+                ).fetchone()
+                self.assertEqual(version, 2)
+                self.assertIsNotNone(table)
+            finally:
+                store.close()
+
+    def test_research_ingest_and_query(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            app = create_app(
+                data_dir=root,
+                static_dir=root / "missing",
+                allowed_users={"yancey@example.com"},
+                ingest_token="secret",
+            )
+            report = sample_research_bundle()
+            auth = {"Authorization": "Bearer secret"}
+            browser = {"Tailscale-User-Login": "yancey@example.com"}
+            with TestClient(app) as client:
+                response = client.put(
+                    f"/api/v1/ingest/research/{report['report_id']}", json=report, headers=auth
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.json()["created"])
+                listing = client.get("/api/v1/research", headers=browser).json()
+                self.assertEqual(listing[0]["category"], "TOPIC")
+                detail = client.get(
+                    f"/api/v1/research/{report['report_id']}", headers=browser
+                ).json()
+                self.assertEqual(detail["body_markdown"], report["body_markdown"])
+
     def test_auth_ingest_and_queries(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

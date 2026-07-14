@@ -16,6 +16,9 @@ def create_backup(store: DashboardStore, target: Path) -> Path:
     bundle_target = target / "bundles"
     if store.bundle_root.exists():
         shutil.copytree(store.bundle_root, bundle_target)
+    research_target = target / "research"
+    if store.research_root.exists():
+        shutil.copytree(store.research_root, research_target)
     connection = sqlite3.connect(target / "server.db")
     try:
         rows = connection.execute("SELECT bundle_id FROM bundles").fetchall()
@@ -24,6 +27,15 @@ def create_backup(store: DashboardStore, target: Path) -> Path:
             if len(candidates) != 1:
                 raise ValueError(f"backup bundle missing or duplicated: {bundle_id}")
             connection.execute("UPDATE bundles SET path=? WHERE bundle_id=?", (str(candidates[0]), bundle_id))
+        research_rows = (
+            connection.execute("SELECT report_id FROM research_reports").fetchall()
+            if _has_table(connection, "research_reports") else []
+        )
+        for (report_id,) in research_rows:
+            candidates = list(research_target.rglob(f"{report_id}.json"))
+            if len(candidates) != 1:
+                raise ValueError(f"backup research report missing or duplicated: {report_id}")
+            connection.execute("UPDATE research_reports SET path=? WHERE report_id=?", (str(candidates[0]), report_id))
         connection.commit()
     finally:
         connection.close()
@@ -37,7 +49,7 @@ def create_backup(store: DashboardStore, target: Path) -> Path:
                 "application": "astock",
                 "application_version": application_version,
                 "backup_schema_version": 1,
-                "dashboard_schema_version": 1,
+                "dashboard_schema_version": 2,
             },
             ensure_ascii=False,
             separators=(",", ":"),
@@ -56,6 +68,8 @@ def restore_backup(source: Path, target: Path) -> dict[str, int]:
     shutil.copy2(source / "server.db", target / "server.db")
     shutil.copy2(source / "version.json", target / "version.json")
     shutil.copytree(source / "bundles", target / "bundles")
+    if (source / "research").exists():
+        shutil.copytree(source / "research", target / "research")
     connection = sqlite3.connect(target / "server.db")
     try:
         rows = connection.execute("SELECT bundle_id FROM bundles").fetchall()
@@ -64,6 +78,15 @@ def restore_backup(source: Path, target: Path) -> dict[str, int]:
             if len(candidates) != 1:
                 raise ValueError(f"restored bundle missing or duplicated: {bundle_id}")
             connection.execute("UPDATE bundles SET path=? WHERE bundle_id=?", (str(candidates[0]), bundle_id))
+        research_rows = (
+            connection.execute("SELECT report_id FROM research_reports").fetchall()
+            if _has_table(connection, "research_reports") else []
+        )
+        for (report_id,) in research_rows:
+            candidates = list((target / "research").rglob(f"{report_id}.json"))
+            if len(candidates) != 1:
+                raise ValueError(f"restored research report missing or duplicated: {report_id}")
+            connection.execute("UPDATE research_reports SET path=? WHERE report_id=?", (str(candidates[0]), report_id))
         connection.commit()
     finally:
         connection.close()
@@ -94,6 +117,10 @@ def verify_backup(target: Path) -> dict[str, int]:
     connection = sqlite3.connect(target / "server.db")
     try:
         indexed = connection.execute("SELECT bundle_id,path,content_sha256 FROM bundles").fetchall()
+        research_indexed = (
+            connection.execute("SELECT report_id,path,content_sha256 FROM research_reports").fetchall()
+            if _has_table(connection, "research_reports") else []
+        )
     finally:
         connection.close()
     for bundle_id, restored_path, content_sha256 in indexed:
@@ -105,7 +132,16 @@ def verify_backup(target: Path) -> dict[str, int]:
             raise ValueError(f"backup bundle index mismatch: {Path(restored_path).name}")
         if Path(restored_path).resolve() != candidates[0].resolve():
             raise ValueError(f"backup bundle path is not self-contained: {bundle_id}")
-    return {"files": len(manifest), "bundles": len(indexed)}
+    for report_id, restored_path, content_sha256 in research_indexed:
+        candidates = list((target / "research").rglob(f"{report_id}.json"))
+        if len(candidates) != 1:
+            raise ValueError(f"backup research report missing or duplicated: {report_id}")
+        payload = json.loads(candidates[0].read_text(encoding="utf-8"))
+        if payload.get("content_sha256") != content_sha256:
+            raise ValueError(f"backup research report index mismatch: {Path(restored_path).name}")
+        if Path(restored_path).resolve() != candidates[0].resolve():
+            raise ValueError(f"backup research report path is not self-contained: {report_id}")
+    return {"files": len(manifest), "bundles": len(indexed), "research_reports": len(research_indexed)}
 
 
 def _sha256(path: Path) -> str:
@@ -114,6 +150,12 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _has_table(connection: sqlite3.Connection, name: str) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone() is not None
 
 
 def _write_manifest(root: Path) -> None:

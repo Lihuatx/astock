@@ -8,17 +8,20 @@ from pathlib import Path
 from typing import Any
 
 from astock.observability.bundle import canonical_json, validate_live_status, validate_review_bundle
+from astock.observability.research_bundle import validate_research_bundle
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class DashboardStore:
-    def __init__(self, path: Path, bundle_root: Path) -> None:
+    def __init__(self, path: Path, bundle_root: Path, research_root: Path | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         bundle_root.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.bundle_root = bundle_root
+        self.research_root = research_root or bundle_root.parent / "research"
+        self.research_root.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
@@ -71,6 +74,20 @@ class DashboardStore:
                 object_id TEXT NOT NULL,
                 received_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS research_reports (
+                report_id TEXT PRIMARY KEY,
+                category TEXT NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                source_commit TEXT NOT NULL,
+                data_cutoff TEXT NOT NULL,
+                published_at TEXT NOT NULL,
+                path TEXT NOT NULL,
+                received_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS research_reports_category_idx
+                ON research_reports(category, published_at DESC);
             """
         )
         self.connection.execute(
@@ -78,6 +95,62 @@ class DashboardStore:
             (SCHEMA_VERSION, datetime.now().astimezone().isoformat()),
         )
         self.connection.commit()
+
+    def save_research_bundle(self, bundle: dict[str, Any], received_at: datetime) -> bool:
+        validate_research_bundle(bundle)
+        target = self.research_root / bundle["category"].lower() / f"{bundle['report_id']}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        encoded = canonical_json(bundle)
+        with self._lock:
+            existing = self.connection.execute(
+                "SELECT content_sha256,path FROM research_reports WHERE report_id=?",
+                (bundle["report_id"],),
+            ).fetchone()
+            if existing:
+                existing_path = Path(existing["path"])
+                if existing["content_sha256"] != bundle["content_sha256"]:
+                    raise ValueError("research report id already exists with different content")
+                if not existing_path.is_file() or existing_path.read_bytes() != encoded:
+                    raise ValueError("research report id already exists with different file bytes")
+                validate_research_bundle(json.loads(existing_path.read_bytes()))
+                return False
+            target.write_bytes(encoded)
+            with self.connection:
+                self.connection.execute(
+                    "INSERT INTO research_reports VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        bundle["report_id"], bundle["category"], bundle["title"], bundle["status"],
+                        bundle["content_sha256"], bundle["source_commit"], bundle["data_cutoff"],
+                        bundle["published_at"], str(target), received_at.isoformat(),
+                    ),
+                )
+                self.connection.execute(
+                    "INSERT INTO ingest_receipts VALUES(?,?,?,?)",
+                    (f"research:{bundle['report_id']}", "RESEARCH_BUNDLE", bundle["report_id"], received_at.isoformat()),
+                )
+            return True
+
+    def research_reports(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT report_id,category,title,status,content_sha256,source_commit,data_cutoff,published_at,received_at "
+                "FROM research_reports ORDER BY published_at DESC,report_id"
+            ).fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                payload = self.load_research_report(item["report_id"])
+                item["summary"] = payload.get("summary", "") if payload else ""
+                item["conclusion"] = payload.get("conclusion", "") if payload else ""
+                result.append(item)
+            return result
+
+    def load_research_report(self, report_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT path FROM research_reports WHERE report_id=?", (report_id,)
+            ).fetchone()
+            return json.loads(Path(row["path"]).read_text(encoding="utf-8")) if row else None
 
     def save_bundle(self, bundle: dict[str, Any], received_at: datetime) -> bool:
         with self._lock:

@@ -154,6 +154,7 @@ def create_review_bundle_from_repository(
     generated_at: datetime,
     data_cutoff: str,
     health: dict[str, Any] | None = None,
+    research_index: list[str] | None = None,
 ) -> tuple[dict[str, Any], Path]:
     set_id = strategy_set_id(report_path)
     report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -193,9 +194,52 @@ def create_review_bundle_from_repository(
     event_payload = lambda kind: [item for item in events if item["event_type"] == kind]
     signals = []
     signal_path = report_path.parent.parent / "paper" / "sets" / set_id / "pending_signals.json"
+    plan: dict[str, Any] = {}
     if signal_path.exists():
         plan = json.loads(signal_path.read_text(encoding="utf-8"))
         signals = plan.get("strategies", [])
+    plan_items = [
+        {
+            "strategy": item.get("strategy"),
+            "symbols": item.get("symbols", []),
+            "symbol_count": len(item.get("symbols", [])),
+            "selection_audit": item.get("selection_audit", {}),
+        }
+        for item in signals
+    ]
+    trade_plan = {
+        "status": "READY" if plan else "UNAVAILABLE",
+        "signal_date": plan.get("signal_date"),
+        "execution_date": plan.get("earliest_execution_date"),
+        "generated_at": plan.get("generated_at"),
+        "rule": plan.get("rule"),
+        "items": plan_items,
+        "skipped": plan.get("skipped", []),
+    }
+    daily_facts = observability.tdx_sim_daily_facts(trading_day.isoformat())
+    latest_fact = daily_facts[-1] if daily_facts else None
+    execution_review = (
+        {
+            "status": "PASSED" if latest_fact["review"].get("ok") else "ATTENTION",
+            "fact_id": latest_fact["fact_id"],
+            "captured_at": latest_fact["captured_at"],
+            "asset": latest_fact["asset"],
+            "positions": latest_fact["positions"],
+            "orders": latest_fact["orders"],
+            **latest_fact["review"],
+        }
+        if latest_fact
+        else {"status": "UNAVAILABLE", "message": "尚未保存当日 TDX 模拟账户事实"}
+    )
+    activity = [
+        {
+            "event_id": item["event_id"],
+            "event_type": item["event_type"],
+            "occurred_at": item["occurred_at"],
+            "payload": item["payload"],
+        }
+        for item in events[-100:]
+    ]
     bundle = build_review_bundle(
         trading_day=trading_day.isoformat(),
         generated_at=generated_at,
@@ -214,5 +258,9 @@ def create_review_bundle_from_repository(
         health=health or {},
         alerts=[item for item in events if item["event_type"].endswith("ALERT") or item["event_type"] == "STALE_SIGNAL_PLAN"],
         known_limitations=list(report.get("methodology", {}).get("known_limitations", [])),
+        trade_plan=trade_plan,
+        execution_review=execution_review,
+        activity=activity,
+        research_index=research_index or [],
     )
     return bundle, write_review_bundle(bundle, bundle_root)

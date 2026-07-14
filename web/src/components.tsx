@@ -41,13 +41,17 @@ export function EquityChart({ bundle, accountId }: { bundle: ReviewBundle; accou
   useEffect(() => {
     if (!ref.current) return;
     const chart = echarts.init(ref.current, undefined, { renderer: "svg" });
+    const styles = getComputedStyle(document.documentElement);
+    const accent = styles.getPropertyValue("--accent").trim();
+    const border = styles.getPropertyValue("--border").trim();
+    const muted = styles.getPropertyValue("--muted").trim();
     const rows = bundle.equity_curve.filter((item) => !accountId || item.account_id === accountId);
     chart.setOption({
       grid: { left: 48, right: 16, top: 24, bottom: 38 },
       tooltip: { trigger: "axis" },
-      xAxis: { type: "category", data: rows.map((item) => item.trading_day), boundaryGap: false },
-      yAxis: { type: "value", scale: true },
-      series: [{ type: "line", data: rows.map((item) => Number(item.equity)), smooth: true, showSymbol: rows.length < 20, lineStyle: { color: "#174f43", width: 2 }, areaStyle: { color: "rgba(23,79,67,.08)" } }],
+      xAxis: { type: "category", data: rows.map((item) => item.trading_day), boundaryGap: false, axisLine: { lineStyle: { color: border } }, axisLabel: { color: muted } },
+      yAxis: { type: "value", scale: true, splitLine: { lineStyle: { color: border } }, axisLabel: { color: muted } },
+      series: [{ type: "line", data: rows.map((item) => Number(item.equity)), smooth: true, showSymbol: rows.length < 20, lineStyle: { color: accent, width: 2 }, areaStyle: { color: accent, opacity: .08 } }],
     });
     const resize = () => chart.resize();
     window.addEventListener("resize", resize);

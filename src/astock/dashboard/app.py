@@ -82,6 +82,17 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True}
 
+    @app.put("/api/v1/ingest/research/{report_id}", dependencies=[Depends(require_ingest)])
+    async def ingest_research(report_id: str, request: Request) -> dict[str, object]:
+        payload = await request.json()
+        if payload.get("report_id") != report_id:
+            raise HTTPException(status_code=400, detail="research path id mismatch")
+        try:
+            created = store(request).save_research_bundle(payload, datetime.now(SHANGHAI))
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"ok": True, "created": created}
+
     browser = [Depends(require_browser_user)]
 
     @app.get("/api/v1/overview", dependencies=browser)
@@ -93,6 +104,7 @@ def create_app(
             "bundle": bundle,
             "live_status": current.live_statuses(),
             "alerts": current.effective_alerts(now),
+            "research": current.research_reports(),
         }
 
     @app.get("/api/v1/accounts", dependencies=browser)
@@ -137,6 +149,17 @@ def create_app(
     @app.get("/api/v1/alerts", dependencies=browser)
     def alerts(request: Request) -> list[dict]:
         return store(request).effective_alerts(datetime.now(SHANGHAI))
+
+    @app.get("/api/v1/research", dependencies=browser)
+    def research(request: Request) -> list[dict]:
+        return store(request).research_reports()
+
+    @app.get("/api/v1/research/{report_id}", dependencies=browser)
+    def research_detail(report_id: str, request: Request) -> dict:
+        report = store(request).load_research_report(report_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="research report not found")
+        return report
 
     if static.exists():
         @app.get("/{path:path}", dependencies=browser)

@@ -40,6 +40,15 @@ Windows runner ── outbound HTTPS over Tailscale ─> FastAPI
 
 ## P4 服务与存储边界
 
+### Dashboard 发布模型
+
+- `ReviewBundle v2` 在 v1 交易事实基础上增加 `trade_plan`、`execution_review`、`activity` 和 `research_index`。计划与复盘均由 Windows 事实源生成，服务器和浏览器不得重新计算。
+- `ResearchBundle v1` 独立保存策略、行业和专题报告的 Markdown 正文、摘要、结论、来源路径、来源 commit、数据截止时间与内容哈希。报告内容改变时生成新 ID，既有版本不可覆盖。
+- Windows 同步 Outbox 分别发送 `BUNDLE`、`RESEARCH_BUNDLE` 和 `LIVE_STATUS`；服务器保存不可变文件并建立只读索引。
+- DashboardStore schema v2 只增加研究报告索引，不修改 Windows 账户 SQLite、Ledger 或 TDX 模拟账户事实。
+- 六个主路由固定为 `/`、`/trade-plan`、`/account`、`/execution`、`/research` 和 `/system`；旧复盘详情路由继续保留。
+- 研究库借鉴报告历史、类型筛选、决策摘要、数据质量与来源追踪的信息架构，但不引入外部项目的大模型分析、聊天或交易决策逻辑。
+
 - FastAPI 在 lifespan 内创建和关闭服务存储；SQLite 使用每操作独立连接或明确串行写锁，不共享无保护连接处理并发请求。
 - `/healthz` 可匿名访问；Bundle／状态上传只接受独立 Bearer token；SPA、`/assets/*` 和所有浏览器查询 API 统一校验 Tailscale 用户允许列表。
 - 服务器基于自身 `received_at` 计算新鲜度，正常同步目标小于 60 秒，超过 90 秒生成严重 `RUNNER_OFFLINE` 告警。

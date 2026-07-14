@@ -16,6 +16,7 @@ from astock.data.tdx import TdxClient
 from astock.data.tdx_transport import TdxSdkTransport
 from astock.observability.bundle import build_live_status, strategy_set_id
 from astock.observability.repository import ObservabilityRepository
+from astock.observability.research_bundle import publish_research_bundles
 from astock.observability.snapshot import capture_account_snapshot, create_review_bundle_from_repository
 from astock.observability.sync import SyncClient, dispatch_sync
 from astock.storage import Repository
@@ -164,6 +165,16 @@ class Runner:
         error = None
         try:
             report = self.settings.data_dir / "reports" / "strategy_research.json"
+            research = publish_research_bundles(
+                self.workspace, self.settings.data_dir / "review" / "research"
+            )
+            for research_bundle, research_path in research:
+                self.observability.enqueue_sync(
+                    "RESEARCH_BUNDLE",
+                    research_bundle["report_id"],
+                    research_path,
+                    now,
+                )
             bundle, path = create_review_bundle_from_repository(
                 self.observability,
                 report,
@@ -172,6 +183,7 @@ class Runner:
                 now.date(),
                 now,
                 now.isoformat(),
+                research_index=[item[0]["report_id"] for item in research],
             )
             self.observability.enqueue_sync("BUNDLE", bundle["bundle_id"], path, now)
         except Exception as exc:
@@ -247,9 +259,13 @@ class Runner:
             raise RuntimeError("another astock runner owns the active lease")
         current = now.timetz().replace(tzinfo=None)
         weekday = now.weekday() < 5
+        execution_window = (
+            clock_time(9, 35) <= current <= clock_time(11, 25)
+            or clock_time(13, 5) <= current <= clock_time(14, 55)
+        )
         if weekday and current >= clock_time(8, 55):
             self._run_cli_job("doctor", "doctor", now)
-        if weekday and current >= clock_time(9, 35) and self.settings.paper_execution_enabled:
+        if weekday and execution_window and self.settings.paper_execution_enabled:
             self._run_cli_job("paper_execute", "paper-execute", now)
         if weekday and current >= clock_time(15, 20):
             self._run_cli_job("tdx_sim_review", "paper-review", now)

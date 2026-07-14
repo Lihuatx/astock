@@ -46,6 +46,8 @@ python -m astock.cli paper-prepare
 
 生成信号后，runner 会在收盘阶段拉取 TDX 模拟账户事实、生成差异报告并保存账户快照、`ReviewBundle` 和 `LiveStatus`。自动模拟执行默认关闭；只有验证模拟账户类型、交易协议和重启幂等后，才允许设置 `ASTOCK_PAPER_EXECUTION_ENABLED=true`。5 分钟复核继续用于成交质量诊断，但不阻止前向模拟。
 
+自动模拟委托只会在工作日连续竞价窗口 `09:35～11:25`、`13:05～14:55` 领取当天计划；午间、收盘后和非工作日不会发送。收盘后仍会执行 TDX 日终事实镜像和后验复盘。
+
 TDX 模拟交易配置仅通过进程环境或本机 `.env.demo` 提供。新量化模拟客户端设置 `ASTOCK_TDX_PLUGIN_DIR` 指向其 `PYPlugins/user` 目录；`ASTOCK_TDX_SIMULATION_CONFIRMED=true` 表示当前登录会话已由 Yancey 确认为模拟账户；`ASTOCK_PAPER_EXECUTION_ENABLED=true` 启用 runner 发送订单。`ASTOCK_TDX_SIM_ACCOUNT` 可选，未配置时按官方协议使用当前登录账户。程序不得输出账号值。普通实盘账户下单返回的 `Value=1` 会被拒绝；只有模拟账户自动下单返回 `Value=2` 且存在 `Wtbh` 时才写为 `ACK`。未配置 SDK 目录时保留 `TDX_BASE_URL` HTTP 兼容路径。
 
 官方协议依据：
@@ -88,6 +90,8 @@ $env:ASTOCK_ALLOWED_TAILSCALE_USERS='local@example.com'
 $env:ASTOCK_SYNC_TOKEN='local-test-token'
 python -m astock.cli dashboard --port 18080
 ```
+
+新发布的 `ReviewBundle v2` 包含下一交易日计划、当日执行复盘、结构化活动和研究索引。Runner 同时把仓库中已确认的策略、行业与专题 Markdown 生成独立 `ResearchBundle`；报告正文不会被大模型改写，内容变化才产生新版本。字段、路由和只读边界见 `docs/DASHBOARD.md`。
 
 生产环境主机只允许监听 `127.0.0.1:18080`，容器内部端口可以独立设置，由 Tailscale Serve 提供私网 HTTPS。前端查询依赖 `Tailscale-User-Login` 允许列表；上传使用独立 Bearer token。不得启用 Funnel，也不得将 Dashboard 端口直接暴露到公网。
 

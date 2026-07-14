@@ -1,4 +1,4 @@
-import type { Alert, Overview, ReviewBundle } from "./types";
+import type { Alert, Overview, ResearchBundle, ResearchSummary, ReviewBundle } from "./types";
 
 async function request<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { Accept: "application/json" } });
@@ -12,4 +12,6 @@ export const api = {
   review: (id: string) => request<ReviewBundle>(`/api/v1/reviews/${encodeURIComponent(id)}`),
   health: () => request<{ sources: Overview["live_status"]; alerts: Alert[] }>("/api/v1/health"),
   alerts: () => request<Alert[]>("/api/v1/alerts"),
+  research: () => request<ResearchSummary[]>("/api/v1/research"),
+  researchDetail: (id: string) => request<ResearchBundle>(`/api/v1/research/${encodeURIComponent(id)}`),
 };

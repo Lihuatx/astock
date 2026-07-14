@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 1
+REVIEW_SCHEMA_VERSION = 2
+LIVE_STATUS_SCHEMA_VERSION = 1
 
 
 def canonical_json(value: Any) -> bytes:
@@ -55,6 +56,10 @@ def build_review_bundle(
     health: dict[str, Any],
     alerts: list[dict[str, Any]],
     known_limitations: list[str],
+    trade_plan: dict[str, Any] | None = None,
+    execution_review: dict[str, Any] | None = None,
+    activity: list[dict[str, Any]] | None = None,
+    research_index: list[str] | None = None,
 ) -> dict[str, Any]:
     facts = {
         "trading_day": trading_day,
@@ -74,11 +79,15 @@ def build_review_bundle(
         "health": health,
         "alerts": alerts,
         "known_limitations": known_limitations,
+        "trade_plan": trade_plan or {"status": "UNAVAILABLE", "items": []},
+        "execution_review": execution_review or {"status": "UNAVAILABLE"},
+        "activity": activity or [],
+        "research_index": research_index or [],
         "disclaimer": "A股模拟盘观察数据，不构成投资建议。",
     }
     content_hash = review_bundle_content_hash(facts)
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": REVIEW_SCHEMA_VERSION,
         "bundle_id": f"review-{trading_day}-{content_hash[:16]}",
         "content_sha256": content_hash,
         **facts,
@@ -86,7 +95,7 @@ def build_review_bundle(
 
 
 def validate_review_bundle(bundle: dict[str, Any]) -> None:
-    if bundle.get("schema_version") != SCHEMA_VERSION:
+    if bundle.get("schema_version") not in {1, REVIEW_SCHEMA_VERSION}:
         raise ValueError("unsupported review bundle schema")
     facts = {
         key: value
@@ -128,7 +137,7 @@ def build_live_status(
     alerts: list[dict[str, Any]],
 ) -> dict[str, Any]:
     facts = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": LIVE_STATUS_SCHEMA_VERSION,
         "source_id": source_id,
         "generated_at": generated_at.isoformat(),
         "runner": runner,
@@ -141,7 +150,7 @@ def build_live_status(
 
 
 def validate_live_status(status: dict[str, Any]) -> None:
-    if status.get("schema_version") != SCHEMA_VERSION:
+    if status.get("schema_version") != LIVE_STATUS_SCHEMA_VERSION:
         raise ValueError("unsupported live status schema")
     facts = {key: value for key, value in status.items() if key != "status_id"}
     expected = f"status-{sha256_bytes(canonical_json(facts))[:24]}"
