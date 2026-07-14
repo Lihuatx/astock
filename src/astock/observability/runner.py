@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from astock.broker import AShareSimBroker
 from astock.config import Settings
 from astock.data.tdx import TdxClient
+from astock.data.tdx_transport import TdxSdkTransport
 from astock.observability.bundle import build_live_status, strategy_set_id
 from astock.observability.repository import ObservabilityRepository
 from astock.observability.snapshot import capture_account_snapshot, create_review_bundle_from_repository
@@ -91,7 +92,12 @@ class Runner:
         run_id = self.observability.start_run(job_type, now)
         error = None
         try:
-            client = TdxClient(self.settings.tdx_base_url)
+            transport = (
+                TdxSdkTransport(self.settings.tdx_plugin_dir)
+                if self.settings.tdx_plugin_dir
+                else None
+            )
+            client = TdxClient(self.settings.tdx_base_url, transport=transport)
             for account in self.observability.accounts("CURRENT"):
                 repository = Repository(Path(account["db_path"]))
                 broker = AShareSimBroker(repository, Decimal(account["initial_cash"]))

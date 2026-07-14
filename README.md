@@ -17,7 +17,7 @@
 - Windows 11
 - Python 3.13
 - 已启动并登录支持 TQ 的通达信金融终端
-- 本地 TQ HTTP：`http://127.0.0.1:17709/`
+- 前向运行通过量化模拟客户端自带的 `PYPlugins/user/tqcenter.py` 本地 SDK 连接；旧版客户端仍可使用 `http://127.0.0.1:17709/` HTTP。
 
 ## 快速验证
 

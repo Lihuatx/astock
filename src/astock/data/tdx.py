@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime
 from decimal import Decimal
 from itertools import count
-from typing import Any
+from typing import Any, Callable
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -15,6 +15,7 @@ from astock.raw_store import JsonlRawStore
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 BOARD_LOT = 100
 TDX_AMOUNT_UNIT = Decimal("10000")
+Transport = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 
 class TdxError(RuntimeError):
@@ -22,19 +23,29 @@ class TdxError(RuntimeError):
 
 
 class TdxClient:
-    def __init__(self, base_url: str, raw_store: JsonlRawStore | None = None, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        raw_store: JsonlRawStore | None = None,
+        timeout: float = 10.0,
+        transport: Transport | None = None,
+    ) -> None:
         self.base_url = base_url
         self.raw_store = raw_store
         self.timeout = timeout
+        self.transport = transport
         self._ids = count(1)
 
     def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         received_at = datetime.now(SHANGHAI)
-        body = json.dumps({"id": next(self._ids), "method": method, "params": params}).encode()
-        request = Request(self.base_url, data=body, headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urlopen(request, timeout=self.timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
+            if self.transport is not None:
+                payload = self.transport(method, params)
+            else:
+                body = json.dumps({"id": next(self._ids), "method": method, "params": params}).encode()
+                request = Request(self.base_url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+                with urlopen(request, timeout=self.timeout) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
         except Exception as exc:
             raise TdxError(f"TDX request failed: {method}: {exc}") from exc
         if self.raw_store:

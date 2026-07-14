@@ -13,6 +13,7 @@ from pathlib import Path
 from astock.config import Settings
 from astock.data.tdx import TdxClient, TdxError
 from astock.data.tdx_sim import JsonlErrorLog, TdxSimClient
+from astock.data.tdx_transport import TdxSdkTransport
 from astock.data.pytdx import PytdxMinuteClient, PytdxError
 from astock.data.ths import ThsClient, ThsError
 from astock.raw_store import JsonlRawStore
@@ -43,6 +44,14 @@ def _settings(args: argparse.Namespace) -> Settings:
     return Settings.from_env(args.env_file)
 
 
+def _tdx_transport(settings: Settings) -> TdxSdkTransport | None:
+    return TdxSdkTransport(settings.tdx_plugin_dir) if settings.tdx_plugin_dir else None
+
+
+def _tdx_client(settings: Settings, raw_store: JsonlRawStore | None = None) -> TdxClient:
+    return TdxClient(settings.tdx_base_url, raw_store, transport=_tdx_transport(settings))
+
+
 def _paper_context(settings: Settings) -> tuple[ObservabilityRepository, str, Path]:
     report_path = settings.data_dir / "reports" / "strategy_research.json"
     observability = ObservabilityRepository(settings.data_dir / "observability" / "observability.db")
@@ -62,7 +71,7 @@ def doctor(args: argparse.Namespace) -> int:
     raw_store = JsonlRawStore(settings.data_dir / "raw")
     result: dict[str, object] = {"tdx": {"ok": False}, "ths": {"configured": bool(settings.ths_api_key)}}
     try:
-        result["tdx"] = TdxClient(settings.tdx_base_url, raw_store).doctor()
+        result["tdx"] = _tdx_client(settings, raw_store).doctor()
     except TdxError as exc:
         result["tdx"] = {"ok": False, "error": str(exc)}
     if settings.ths_api_key:
@@ -76,7 +85,7 @@ def doctor(args: argparse.Namespace) -> int:
 
 def replay(args: argparse.Namespace) -> int:
     settings = _settings(args)
-    bars = TdxClient(settings.tdx_base_url, JsonlRawStore(settings.data_dir / "raw")).get_bars(
+    bars = _tdx_client(settings, JsonlRawStore(settings.data_dir / "raw")).get_bars(
         args.symbol, start=args.start, end=args.end
     )
     curve = []
@@ -109,7 +118,7 @@ def research(args: argparse.Namespace) -> int:
     if cache_path.exists() and not args.refresh:
         panel = MarketPanel.load(cache_path)
     else:
-        panel = fetch_market_panel(TdxClient(settings.tdx_base_url), args.start, args.end, cache_path)
+        panel = fetch_market_panel(_tdx_client(settings), args.start, args.end, cache_path)
     result = run_research(panel)
     report_path = settings.data_dir / "reports" / "strategy_research.json"
     write_report(result, report_path)
@@ -301,7 +310,7 @@ def paper_signals(args: argparse.Namespace) -> int:
     panel = MarketPanel.load(market_path)
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     completed_end = now.date() if now.time() >= time(15, 10) else now.date() - timedelta(days=1)
-    tdx_client = TdxClient(settings.tdx_base_url, JsonlRawStore(settings.data_dir / "raw"))
+    tdx_client = _tdx_client(settings, JsonlRawStore(settings.data_dir / "raw"))
     missing_dates = tdx_client.get_trading_dates(
         (date.fromisoformat(str(panel.dates[-1])) + timedelta(days=1)).strftime("%Y%m%d"),
         completed_end.strftime("%Y%m%d"),
@@ -403,16 +412,18 @@ def paper_execute(args: argparse.Namespace) -> int:
         now = datetime.now(ZoneInfo("Asia/Shanghai"))
         raw_store = JsonlRawStore(settings.data_dir / "raw")
         error_log = JsonlErrorLog(settings.data_dir / "logs")
+        transport = _tdx_transport(settings)
         result = execute_tdx_sim_plan(
             root / "pending_signals.json",
             set_id,
-            TdxClient(settings.tdx_base_url, raw_store),
+            TdxClient(settings.tdx_base_url, raw_store, transport=transport),
             TdxSimClient(
                 settings.tdx_base_url,
                 settings.tdx_sim_account,
                 settings.tdx_simulation_confirmed,
                 raw_store,
                 error_log,
+                transport=transport,
             ),
             observability,
             error_log,
@@ -431,6 +442,7 @@ def paper_review(args: argparse.Namespace) -> int:
         now = datetime.now(ZoneInfo("Asia/Shanghai"))
         raw_store = JsonlRawStore(settings.data_dir / "raw")
         error_log = JsonlErrorLog(settings.data_dir / "logs")
+        transport = _tdx_transport(settings)
         result = review_tdx_sim_day(
             TdxSimClient(
                 settings.tdx_base_url,
@@ -438,6 +450,7 @@ def paper_review(args: argparse.Namespace) -> int:
                 settings.tdx_simulation_confirmed,
                 raw_store,
                 error_log,
+                transport=transport,
             ),
             observability,
             error_log,
@@ -458,7 +471,7 @@ def intraday_review(args: argparse.Namespace) -> int:
     report = json.loads(report_path.read_text(encoding="utf-8"))
     orders, review_dates = planned_orders(panel, fundamentals, report, args.days)
     raw_store = JsonlRawStore(settings.data_dir / "raw")
-    client = TdxClient(settings.tdx_base_url, raw_store)
+    client = _tdx_client(settings, raw_store)
     bars = load_intraday_bars(
         client,
         (item.symbol for item in orders),

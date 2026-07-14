@@ -46,7 +46,7 @@ python -m astock.cli paper-prepare
 
 生成信号后，runner 会在收盘阶段拉取 TDX 模拟账户事实、生成差异报告并保存账户快照、`ReviewBundle` 和 `LiveStatus`。自动模拟执行默认关闭；只有验证模拟账户类型、交易协议和重启幂等后，才允许设置 `ASTOCK_PAPER_EXECUTION_ENABLED=true`。5 分钟复核继续用于成交质量诊断，但不阻止前向模拟。
 
-TDX 模拟交易需要三个仅通过进程环境或本机 `.env.demo` 提供的配置：`ASTOCK_TDX_SIM_ACCOUNT` 为已在客户端登录的模拟资金账号，`ASTOCK_TDX_SIMULATION_CONFIRMED=true` 表示该账号已由 Yancey 确认为模拟账号，`ASTOCK_PAPER_EXECUTION_ENABLED=true` 启用 runner 发送订单。程序不得输出账号值。普通实盘账户下单返回的 `Value=1` 会被拒绝；只有模拟账户自动下单返回 `Value=2` 且存在 `Wtbh` 时才写为 `ACK`。
+TDX 模拟交易配置仅通过进程环境或本机 `.env.demo` 提供。新量化模拟客户端设置 `ASTOCK_TDX_PLUGIN_DIR` 指向其 `PYPlugins/user` 目录；`ASTOCK_TDX_SIMULATION_CONFIRMED=true` 表示当前登录会话已由 Yancey 确认为模拟账户；`ASTOCK_PAPER_EXECUTION_ENABLED=true` 启用 runner 发送订单。`ASTOCK_TDX_SIM_ACCOUNT` 可选，未配置时按官方协议使用当前登录账户。程序不得输出账号值。普通实盘账户下单返回的 `Value=1` 会被拒绝；只有模拟账户自动下单返回 `Value=2` 且存在 `Wtbh` 时才写为 `ACK`。未配置 SDK 目录时保留 `TDX_BASE_URL` HTTP 兼容路径。
 
 官方协议依据：
 

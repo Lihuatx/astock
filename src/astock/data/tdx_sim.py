@@ -63,7 +63,7 @@ class TdxSimSnapshot:
 
 
 class TdxSimClient:
-    """TDX 模拟交易 HTTP 适配器；只接受明确确认的模拟账户配置。"""
+    """TDX 模拟交易适配器；只接受明确确认的模拟账户会话。"""
 
     def __init__(
         self,
@@ -121,13 +121,13 @@ class TdxSimClient:
             raise error from exc
 
     def account_handle(self) -> int:
-        if not self.simulation_confirmed or not self.account:
+        if not self.simulation_confirmed:
             error = TdxSimulationGuardError("TDX simulation account is not explicitly confirmed")
             self._log_error("stock_account", error)
             raise error
         if self._account_handle is not None:
             return self._account_handle
-        result = self._call("stock_account", {"account": self.account, "account_type": "STOCK"})
+        result = self._call("stock_account", {"account": self.account or "", "account_type": "STOCK"})
         handle = int(result.get("Value", -1))
         if handle <= 0:
             error = TdxSimError("TDX returned an invalid stock account handle")

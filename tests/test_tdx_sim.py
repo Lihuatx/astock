@@ -78,6 +78,17 @@ class TdxSimClientCase(unittest.TestCase):
             "stock_account", "order_stock", "query_stock_asset", "query_stock_positions", "query_stock_orders"
         ])
 
+    def test_confirmed_current_simulation_account_can_use_empty_account_name(self) -> None:
+        requests = []
+
+        def transport(method, params):
+            requests.append((method, params))
+            return {"result": {"ErrorId": "0", "Value": 9}}
+
+        client = TdxSimClient("http://unused", None, True, transport=transport)
+        self.assertEqual(client.account_handle(), 9)
+        self.assertEqual(requests, [("stock_account", {"account": "", "account_type": "STOCK"})])
+
     def test_business_error_is_logged(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             client = TdxSimClient(

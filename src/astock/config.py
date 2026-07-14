@@ -24,6 +24,7 @@ def load_env_file(path: Path) -> None:
 @dataclass(frozen=True)
 class Settings:
     tdx_base_url: str
+    tdx_plugin_dir: Path | None
     ths_base_url: str
     ths_api_key: str | None
     tushare_base_url: str
@@ -46,6 +47,11 @@ class Settings:
         db_path = Path(os.getenv("ASTOCK_DB_PATH", str(data_dir / "astock.db"))).resolve()
         return cls(
             tdx_base_url=os.getenv("TDX_BASE_URL", "http://127.0.0.1:17709/"),
+            tdx_plugin_dir=(
+                Path(os.environ["ASTOCK_TDX_PLUGIN_DIR"]).resolve()
+                if os.getenv("ASTOCK_TDX_PLUGIN_DIR")
+                else None
+            ),
             ths_base_url=os.getenv("THS_BASE_URL", "https://fuyao.aicubes.cn"),
             ths_api_key=os.getenv("THS_API_KEY") or None,
             tushare_base_url=os.getenv("TUSHARE_BASE_URL", "https://fastapic.stockai888.top"),
