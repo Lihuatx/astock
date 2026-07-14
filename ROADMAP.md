@@ -108,7 +108,7 @@ P0～P3、V3～V8 已按修复后的开盘数据口径重跑。P4 第 1 周原�
 
 ## 最近验证
 
-- 2026-07-15：基于 commit `c6e835b` 运行 75 项 Python 自动测试、6 项 Vitest、TypeScript、Dashboard 生产构建和离线报告构建，全部通过；构建仅有 ECharts 入口大于 500KB 的非阻断警告。
+- 2026-07-15：基于 commit `c6e835b` 运行 76 项 Python 自动测试、6 项 Vitest、TypeScript、Dashboard 生产构建和离线报告构建，全部通过；构建仅有 ECharts 入口大于 500KB 的非阻断警告。
 - 2026-07-15：使用本机真实 2026-07-14 TDX 模拟账户事实生成 `ReviewBundle v2`，发布 4 个 ResearchBundle，并建立 DashboardStore schema v2 查询库；独立临时目录备份恢复结果为 1 个 Bundle、4 个研究报告、7 个 manifest 文件。
 - 2026-07-15：浏览器验证六个主路由在 360px 和 1440px 均无页面级横向滚动；总览另覆盖 390、430、600、820、1024、1366、1920px。研究搜索可缩小到单一结果，行业报告抽屉可读取来源 commit、哈希和完整正文，浏览器控制台无错误。
 
