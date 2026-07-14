@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from types import SimpleNamespace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +19,7 @@ from astock.observability.repository import ObservabilityRepository, SCHEMA_VERS
 from astock.observability.report import build_offline_report
 from astock.observability.snapshot import capture_account_snapshot, initialize_observation_set
 from astock.observability.sync import dispatch_sync
+from astock.observability.runner import Runner
 from astock.storage import Repository
 from astock.broker import AShareSimBroker
 from astock.paper import MultiStrategyPaperAccounts
@@ -126,6 +128,77 @@ class ObservabilityCase(unittest.TestCase):
             self.assertEqual(client.uploads, 1)
             repository.close()
 
+    def test_tdx_sim_outbox_is_never_reclaimed_after_send_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            repository = ObservabilityRepository(Path(folder) / "observability.db")
+            repository.register_strategy_set("set-demo", "a" * 64, "abc", {}, NOW)
+            order = {
+                "client_order_id": "set-demo:20260714:000001.SZ:BUY",
+                "strategy_set_id": "set-demo",
+                "strategy": "combined_observer",
+                "signal_date": "2026-07-13",
+                "symbol": "000001.SZ",
+                "side": "BUY",
+                "quantity": 100,
+                "limit_price": "10.01",
+                "created_at": NOW.isoformat(),
+            }
+            repository.enqueue_tdx_sim_order(order)
+            repository.enqueue_tdx_sim_order(order)
+            claimed = repository.claim_tdx_sim_orders(NOW)
+            self.assertEqual(len(claimed), 1)
+            self.assertEqual(repository.claim_tdx_sim_orders(NOW), [])
+            repository.finish_tdx_sim_order(
+                order["client_order_id"], "ACK", NOW, tdx_order_id="SIM-1", response={"Value": 2}
+            )
+            self.assertEqual(repository.tdx_sim_orders()[0]["tdx_order_id"], "SIM-1")
+            repository.close()
+
+    def test_tdx_sim_outbox_claim_is_scoped_to_current_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            repository = ObservabilityRepository(Path(folder) / "observability.db")
+            repository.register_strategy_set("set-demo", "a" * 64, "abc", {}, NOW)
+            for signal_date in ("2026-07-12", "2026-07-13"):
+                repository.enqueue_tdx_sim_order({
+                    "client_order_id": f"set-demo:{signal_date}",
+                    "strategy_set_id": "set-demo",
+                    "strategy": "combined_observer",
+                    "signal_date": signal_date,
+                    "symbol": "000001.SZ",
+                    "side": "BUY",
+                    "quantity": 100,
+                    "limit_price": "10",
+                    "created_at": NOW.isoformat(),
+                })
+            claimed = repository.claim_tdx_sim_orders(
+                NOW, strategy_set_id="set-demo", signal_date="2026-07-13"
+            )
+            self.assertEqual([item["signal_date"] for item in claimed], ["2026-07-13"])
+            self.assertEqual(
+                [item["signal_date"] for item in repository.tdx_sim_orders("PENDING")],
+                ["2026-07-12"],
+            )
+            repository.close()
+
+    def test_tdx_sim_daily_facts_are_immutable_versions(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            repository = ObservabilityRepository(Path(folder) / "observability.db")
+            fact = {
+                "trading_day": "2026-07-14",
+                "captured_at": NOW.isoformat(),
+                "asset": {"Cash": "100000"},
+                "positions": [],
+                "orders": [],
+                "review": {"ok": True},
+            }
+            first = repository.save_tdx_sim_daily_fact(fact)
+            self.assertEqual(repository.save_tdx_sim_daily_fact(fact), first)
+            changed = {**fact, "captured_at": NOW.replace(second=1).isoformat()}
+            second = repository.save_tdx_sim_daily_fact(changed)
+            self.assertNotEqual(second, first)
+            self.assertEqual(len(repository.tdx_sim_daily_facts("2026-07-14")), 2)
+            repository.close()
+
     def test_offline_report_embeds_verified_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -163,6 +236,24 @@ class ObservabilityCase(unittest.TestCase):
             self.assertTrue(repository.acquire_lease("runner", "one", NOW, NOW.replace(minute=1)))
             self.assertFalse(repository.acquire_lease("runner", "two", NOW, NOW.replace(minute=1)))
             repository.close()
+
+    def test_runner_executes_intraday_and_reviews_after_close(self) -> None:
+        class Lease:
+            @staticmethod
+            def acquire_lease(name, owner, now, expires_at):
+                return True
+
+        runner = object.__new__(Runner)
+        runner.observability = Lease()
+        runner.owner_id = "runner-test"
+        runner.settings = SimpleNamespace(paper_execution_enabled=True)
+        calls = []
+        runner._run_cli_job = lambda job_type, command, now: calls.append((job_type, command)) or True
+        runner._publish_status = lambda now: calls.append(("status", "publish"))
+        runner.tick(datetime(2026, 7, 14, 15, 21, tzinfo=ZoneInfo("Asia/Shanghai")))
+        self.assertIn(("paper_execute", "paper-execute"), calls)
+        self.assertIn(("tdx_sim_review", "paper-review"), calls)
+        self.assertNotIn(("account_snapshot", "account_snapshot"), calls)
 
     def test_new_strategy_set_retires_old_current_accounts(self) -> None:
         with tempfile.TemporaryDirectory() as folder:

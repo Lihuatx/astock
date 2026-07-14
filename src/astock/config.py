@@ -35,6 +35,8 @@ class Settings:
     sync_token: str | None
     source_id: str
     paper_execution_enabled: bool
+    tdx_sim_account: str | None
+    tdx_simulation_confirmed: bool
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> "Settings":
@@ -55,4 +57,6 @@ class Settings:
             sync_token=os.getenv("ASTOCK_SYNC_TOKEN") or None,
             source_id=os.getenv("ASTOCK_SOURCE_ID", "windows-primary"),
             paper_execution_enabled=os.getenv("ASTOCK_PAPER_EXECUTION_ENABLED", "false").lower() == "true",
+            tdx_sim_account=os.getenv("ASTOCK_TDX_SIM_ACCOUNT") or None,
+            tdx_simulation_confirmed=os.getenv("ASTOCK_TDX_SIMULATION_CONFIRMED", "false").lower() == "true",
         )

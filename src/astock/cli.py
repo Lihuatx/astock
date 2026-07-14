@@ -12,6 +12,7 @@ from pathlib import Path
 
 from astock.config import Settings
 from astock.data.tdx import TdxClient, TdxError
+from astock.data.tdx_sim import JsonlErrorLog, TdxSimClient
 from astock.data.pytdx import PytdxMinuteClient, PytdxError
 from astock.data.ths import ThsClient, ThsError
 from astock.raw_store import JsonlRawStore
@@ -35,6 +36,7 @@ from astock.observability.report import build_offline_report
 from astock.dashboard.storage import DashboardStore
 from astock.dashboard.backup import create_backup
 from astock.intraday_review import load_intraday_bars, planned_orders, run_intraday_review, write_intraday_report
+from astock.tdx_sim_execution import execute_tdx_sim_plan, review_tdx_sim_day
 
 
 def _settings(args: argparse.Namespace) -> Settings:
@@ -398,19 +400,53 @@ def paper_execute(args: argparse.Namespace) -> int:
         raise ValueError("paper execution is disabled; complete P4 execution acceptance before enabling it")
     observability, set_id, root = _paper_context(settings)
     try:
-        manager = MultiStrategyPaperAccounts(root, settings.initial_cash, observability, set_id)
         now = datetime.now(ZoneInfo("Asia/Shanghai"))
-        results = manager.execute_plan(
+        raw_store = JsonlRawStore(settings.data_dir / "raw")
+        error_log = JsonlErrorLog(settings.data_dir / "logs")
+        result = execute_tdx_sim_plan(
             root / "pending_signals.json",
-            TdxClient(settings.tdx_base_url, JsonlRawStore(settings.data_dir / "raw")),
-            now.date(),
+            set_id,
+            TdxClient(settings.tdx_base_url, raw_store),
+            TdxSimClient(
+                settings.tdx_base_url,
+                settings.tdx_sim_account,
+                settings.tdx_simulation_confirmed,
+                raw_store,
+                error_log,
+            ),
+            observability,
+            error_log,
             now,
-            expected_strategy_set_id=set_id,
-            intraday_confirmation_client=PytdxMinuteClient(JsonlRawStore(settings.data_dir / "raw")),
         )
     finally:
         observability.close()
-    print(json.dumps(results, ensure_ascii=False, indent=2))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def paper_review(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    observability, _, _ = _paper_context(settings)
+    try:
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        raw_store = JsonlRawStore(settings.data_dir / "raw")
+        error_log = JsonlErrorLog(settings.data_dir / "logs")
+        result = review_tdx_sim_day(
+            TdxSimClient(
+                settings.tdx_base_url,
+                settings.tdx_sim_account,
+                settings.tdx_simulation_confirmed,
+                raw_store,
+                error_log,
+            ),
+            observability,
+            error_log,
+            settings.data_dir / "review" / "tdx-sim",
+            now,
+        )
+    finally:
+        observability.close()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -551,9 +587,12 @@ def build_parser() -> argparse.ArgumentParser:
     signal_parser = subparsers.add_parser("paper-signals", help="按最新收盘数据生成三个策略的下一交易日计划")
     signal_parser.add_argument("--env-file", type=Path)
     signal_parser.set_defaults(handler=paper_signals)
-    execute_parser = subparsers.add_parser("paper-execute", help="在下一交易日执行三个隔离账户的模拟计划")
+    execute_parser = subparsers.add_parser("paper-execute", help="向 TDX 模拟组合账户发送计划订单")
     execute_parser.add_argument("--env-file", type=Path)
     execute_parser.set_defaults(handler=paper_execute)
+    review_paper_parser = subparsers.add_parser("paper-review", help="收盘后镜像并复盘 TDX 模拟账户事实")
+    review_paper_parser.add_argument("--env-file", type=Path)
+    review_paper_parser.set_defaults(handler=paper_review)
     intraday_parser = subparsers.add_parser("review-intraday", help="使用最近交易日的 5 分钟线复核开盘成交质量")
     intraday_parser.add_argument("--days", type=int, default=100)
     intraday_parser.add_argument("--refresh", action="store_true")

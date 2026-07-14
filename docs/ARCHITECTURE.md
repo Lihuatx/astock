@@ -8,9 +8,9 @@ ThsReference ───┘                                ↓
                                                  ↓
                                          Persistent OMS/Outbox
                                                  ↓
-                                         AShareSimBroker
+                                        TDX Simulated Account
                                                  ↓
-                                        Ledger/Reconciliation
+                                      SQLite Fact Mirror/Review
 ```
 
 ## P4 观测与复盘目标架构
@@ -18,7 +18,7 @@ ThsReference ───┘                                ↓
 > 本节描述 P4 必须达到的目标架构，不表示当前实现已经通过验收。实际状态和审计阻塞以 `ROADMAP.md` 与 `docs/P4_AUDIT_2026-07-12.md` 为准。
 
 ```text
-Account SQLite / Ledger ─> Observability DB ─> SnapshotBuilder
+TDX Simulated Account ─> Observability DB ─> SnapshotBuilder
                                                    ├─> ReviewBundle
                                                    └─> LiveStatus
 
@@ -27,7 +27,7 @@ Windows runner ── outbound HTTPS over Tailscale ─> FastAPI
                                                       └─> React Dashboard
 ```
 
-- Windows 本机仍是交易事实源，服务器是只读查询镜像。
+- TDX 模拟账户是订单、成交、资金和持仓的交易事实源；Windows 本机 SQLite 是不可变事实镜像和审计源，服务器是只读查询镜像。
 - `strategy_set_id` 绑定规范化策略集合和研究报告哈希；`account_id` 固定包含策略集合、策略和账户代次。
 - `run_id`、`account_id`、信号／计划 ID 和订单 ID 必须把策略、风险、订单、成交、费用和对账事件连成可审计链。
 - 全局事件 ID 必须包含账户作用域；相同 ID、相同规范内容视为幂等，相同 ID、不同内容必须拒绝，禁止静默忽略。
@@ -35,7 +35,7 @@ Windows runner ── outbound HTTPS over Tailscale ─> FastAPI
 - `LiveStatus` 只保存正在变化的心跳、任务、数据源、同步和告警状态；每版状态拥有独立 `status_id` 和不可变本地 payload，服务器再按 `source_id` 派生最新视图。
 - 本地同步 Outbox 以 Bundle ID 或 Status ID 唯一；断网期间不得覆盖尚未发送的版本，恢复后按版本幂等补传。
 - 浏览器不得直接读取本机 SQLite、研究 JSON 或待执行信号文件。
-- 服务器故障和同步失败不阻断本地任务；交易安全异常继续 fail closed。
+- 服务器故障、同步失败、行情异常、单笔订单错误和盘中差异不阻断其他模拟订单；异常写结构化日志并进入收盘复盘。
 - Dashboard 不提供任何交易控制能力。
 
 ## P4 服务与存储边界
@@ -51,11 +51,11 @@ Windows runner ── outbound HTTPS over Tailscale ─> FastAPI
 
 1. TDX 是盘中主源，THS 只校验，不自动切换后继续下单。
 2. 策略输出目标和意图；风控、OMS、Broker 分层独立。
-3. Outbox 先落库再送 Broker，`client_order_id` 全链路幂等。
-4. 现金、冻结资金、持仓批次、可卖数量和费用分别记账。
+3. Outbox 先落库再送 TDX 模拟交易适配器；开始发送后不自动重试，避免接口超时造成重复委托。
+4. 现金、冻结资金、持仓和委托以 TDX 模拟账户返回事实为准，本地不得制造或改写成交。
 5. 所有外部输入先保存原始 JSONL，再转换成领域对象。
-6. 行情过期、订单未知或账实不符时 fail closed。
+6. 行情过期、订单未知或账实不符时记录结构化错误，继续处理其他模拟订单，并在每日收盘后统一复盘。
 7. 研究框架使用滚动窗口计算横截面因子，T 日收盘生成目标，T＋1 开盘执行。
-8. 多策略账户完全隔离，策略比较不共享现金、订单、持仓或成交状态。
+8. 研究账户继续隔离比较；前向执行使用单一 TDX 模拟组合账户承载当前观察策略标的并集。
 9. 当前观察集使用研究报告哈希生成 `strategy_set_id`，历史账户登记为 legacy，不移动或覆盖。
 10. 生产服务只监听本机回环地址，由 Tailscale Serve 提供私网 HTTPS 和用户身份头。

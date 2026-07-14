@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import uuid
 from datetime import datetime
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class ObservabilityRepository:
@@ -109,6 +110,36 @@ class ObservabilityRepository:
                 owner_id TEXT NOT NULL,
                 expires_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS tdx_sim_order_outbox (
+                client_order_id TEXT PRIMARY KEY,
+                strategy_set_id TEXT NOT NULL,
+                strategy TEXT NOT NULL,
+                signal_date TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                limit_price TEXT NOT NULL,
+                status TEXT NOT NULL,
+                tdx_order_id TEXT,
+                response TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(strategy_set_id) REFERENCES strategy_sets(strategy_set_id)
+            );
+            CREATE INDEX IF NOT EXISTS tdx_sim_outbox_status_idx
+                ON tdx_sim_order_outbox(status, created_at);
+            CREATE TABLE IF NOT EXISTS tdx_sim_daily_facts (
+                fact_id TEXT PRIMARY KEY,
+                trading_day TEXT NOT NULL,
+                captured_at TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                positions TEXT NOT NULL,
+                orders TEXT NOT NULL,
+                review TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS tdx_sim_facts_day_idx
+                ON tdx_sim_daily_facts(trading_day, captured_at);
             """
         )
         self.connection.execute(
@@ -378,6 +409,129 @@ class ObservabilityRepository:
             (error, next_attempt_at.isoformat(), outbox_id),
         )
         self.connection.commit()
+
+    def enqueue_tdx_sim_order(self, order: dict[str, Any]) -> None:
+        values = (
+            order["client_order_id"], order["strategy_set_id"], order["strategy"], order["signal_date"],
+            order["symbol"], order["side"], int(order["quantity"]), str(order["limit_price"]),
+            "PENDING", None, None, None, order["created_at"], order["created_at"],
+        )
+        existing = self.connection.execute(
+            "SELECT * FROM tdx_sim_order_outbox WHERE client_order_id=?", (order["client_order_id"],)
+        ).fetchone()
+        if existing:
+            immutable = (
+                existing["client_order_id"], existing["strategy_set_id"], existing["strategy"],
+                existing["signal_date"], existing["symbol"], existing["side"], existing["quantity"],
+                existing["limit_price"], existing["created_at"],
+            )
+            if immutable != values[:8] + (values[12],):
+                raise ValueError(f"TDX simulation order {order['client_order_id']!r} conflicts with existing intent")
+            return
+        self.connection.execute(
+            "INSERT INTO tdx_sim_order_outbox VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values
+        )
+        self.connection.commit()
+
+    def claim_tdx_sim_orders(
+        self,
+        claimed_at: datetime,
+        *,
+        strategy_set_id: str | None = None,
+        signal_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        where = ["status='PENDING'"]
+        args: list[str] = []
+        if strategy_set_id is not None:
+            where.append("strategy_set_id=?")
+            args.append(strategy_set_id)
+        if signal_date is not None:
+            where.append("signal_date=?")
+            args.append(signal_date)
+        with self.connection:
+            rows = self.connection.execute(
+                f"SELECT * FROM tdx_sim_order_outbox WHERE {' AND '.join(where)} "
+                "ORDER BY created_at,client_order_id",
+                args,
+            ).fetchall()
+            self.connection.executemany(
+                "UPDATE tdx_sim_order_outbox SET status='SENDING',updated_at=? WHERE client_order_id=?",
+                [(claimed_at.isoformat(), row["client_order_id"]) for row in rows],
+            )
+        return [dict(row) for row in rows]
+
+    def finish_tdx_sim_order(
+        self,
+        client_order_id: str,
+        status: str,
+        finished_at: datetime,
+        *,
+        tdx_order_id: str | None = None,
+        response: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        if status not in {"ACK", "ERROR", "UNKNOWN"}:
+            raise ValueError(f"invalid TDX simulation outbox status: {status}")
+        self.connection.execute(
+            """UPDATE tdx_sim_order_outbox
+               SET status=?,tdx_order_id=?,response=?,error=?,updated_at=?
+               WHERE client_order_id=? AND status='SENDING'""",
+            (
+                status, tdx_order_id, _json(response) if response is not None else None,
+                error, finished_at.isoformat(), client_order_id,
+            ),
+        )
+        self.connection.commit()
+
+    def tdx_sim_orders(self, status: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM tdx_sim_order_outbox"
+        args: tuple[str, ...] = ()
+        if status:
+            sql += " WHERE status=?"
+            args = (status,)
+        sql += " ORDER BY created_at,client_order_id"
+        result = []
+        for row in self.connection.execute(sql, args):
+            item = dict(row)
+            item["response"] = json.loads(item["response"]) if item["response"] else None
+            result.append(item)
+        return result
+
+    def save_tdx_sim_daily_fact(self, fact: dict[str, Any]) -> str:
+        content = {
+            "trading_day": fact["trading_day"],
+            "captured_at": fact["captured_at"],
+            "asset": fact["asset"],
+            "positions": fact["positions"],
+            "orders": fact["orders"],
+            "review": fact["review"],
+        }
+        fact_id = f"tdx-sim:{fact['trading_day']}:{hashlib.sha256(_json(content).encode()).hexdigest()[:16]}"
+        values = (
+            fact_id, fact["trading_day"], fact["captured_at"], _json(fact["asset"]),
+            _json(fact["positions"]), _json(fact["orders"]), _json(fact["review"]),
+        )
+        self._insert_exact(
+            "tdx_sim_daily_facts", "fact_id", fact_id,
+            "INSERT INTO tdx_sim_daily_facts VALUES(?,?,?,?,?,?,?)", values,
+        )
+        self.connection.commit()
+        return fact_id
+
+    def tdx_sim_daily_facts(self, trading_day: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM tdx_sim_daily_facts"
+        args: tuple[str, ...] = ()
+        if trading_day:
+            sql += " WHERE trading_day=?"
+            args = (trading_day,)
+        sql += " ORDER BY trading_day,captured_at,fact_id"
+        result = []
+        for row in self.connection.execute(sql, args):
+            item = dict(row)
+            for field in ("asset", "positions", "orders", "review"):
+                item[field] = json.loads(item[field])
+            result.append(item)
+        return result
 
     def _insert_exact(
         self, table: str, key_column: str, key: str, sql: str, values: tuple[Any, ...]

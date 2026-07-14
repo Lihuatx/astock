@@ -174,7 +174,7 @@ class Runner:
         health_events = [item for item in events if item["event_type"] == "DATA_SOURCE_HEALTH"]
         sources = health_events[-1]["payload"] if health_events else {"tdx": {"configured": True, "ok": None}}
         jobs = {}
-        for job_type in ("doctor", "paper_execute", "account_snapshot", "paper_signals", "review_bundle"):
+        for job_type in ("doctor", "paper_execute", "tdx_sim_review", "paper_signals", "review_bundle"):
             attempts = self.observability.run_attempts(job_type, now.date().isoformat())
             if attempts:
                 jobs[job_type] = attempts[-1]
@@ -212,7 +212,7 @@ class Runner:
         if weekday and current >= clock_time(9, 35) and self.settings.paper_execution_enabled:
             self._run_cli_job("paper_execute", "paper-execute", now)
         if weekday and current >= clock_time(15, 20):
-            self._capture_snapshots(now)
+            self._run_cli_job("tdx_sim_review", "paper-review", now)
         if weekday and current >= clock_time(16, 0):
             self._run_cli_job("paper_signals", "paper-signals", now)
             if self.observability.has_successful_run("paper_signals", now.date().isoformat()):
