@@ -93,7 +93,7 @@ python -m astock.cli dashboard --port 18080
 
 新发布的 `ReviewBundle v2` 包含下一交易日计划、当日执行复盘、结构化活动和研究索引。Runner 同时把仓库中已确认的策略、行业与专题 Markdown 生成独立 `ResearchBundle`；报告正文不会被大模型改写，内容变化才产生新版本。字段、路由和只读边界见 `docs/DASHBOARD.md`。
 
-生产环境主机只允许监听 `127.0.0.1:18080`，容器内部端口可以独立设置，由 Tailscale Serve 提供私网 HTTPS。前端查询依赖 `Tailscale-User-Login` 允许列表；上传使用独立 Bearer token。不得启用 Funnel，也不得将 Dashboard 端口直接暴露到公网。
+生产环境主机只允许监听 `127.0.0.1:18080`。本机 CLI 默认同样监听回环地址；Docker 镜像通过 `ASTOCK_DASHBOARD_HOST=0.0.0.0` 监听容器网络，再由 Compose 严格映射到宿主机回环地址。Tailscale Serve 提供私网 HTTPS。前端查询依赖 `Tailscale-User-Login` 允许列表；上传使用独立 Bearer token。不得启用 Funnel，也不得将 Dashboard 端口直接暴露到公网。
 
 目标 Tailscale Serve 配置为转发到 `http://127.0.0.1:18080`。执行 Docker、Tailscale、服务器目录、端口或系统服务变更前，必须先说明风险并获得单独确认。
 

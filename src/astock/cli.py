@@ -541,7 +541,8 @@ def dashboard_command(args: argparse.Namespace) -> int:
     import uvicorn
     from astock.dashboard.app import create_app
 
-    uvicorn.run(create_app(), host="127.0.0.1", port=args.port, workers=1)
+    host = os.getenv("ASTOCK_DASHBOARD_HOST", "127.0.0.1")
+    uvicorn.run(create_app(), host=host, port=args.port, workers=1)
     return 0
 
 
