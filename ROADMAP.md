@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-P0～P3、V3～V8 已按修复后的开盘数据口径重跑。P4 第 1 周原审计 P0／P1 问题已在稳定 commit `73bc83e` 完成第三次独立复审并全部转绿；完整 P4 目标日期为 2026-08-09。TDX 模拟账户权威、SQLite 镜像与每日后验复盘模式已实现并完成 v2 schema 迁移；新量化模拟客户端的本地 TQ SDK 传输层和真实只读复盘已联调通过，当前计划为空且未发送委托，自动执行继续关闭。
+P0～P3、V3～V8 已按修复后的开盘数据口径重跑。P4 第 1 周原审计 P0／P1 问题已在稳定 commit `73bc83e` 完成第三次独立复审并全部转绿；完整 P4 目标日期为 2026-08-09。TDX 模拟账户权威、SQLite 镜像与每日后验复盘模式已实现并完成 v2 schema 迁移；新量化模拟客户端的本地 TQ SDK 传输层和真实只读复盘已联调通过，当前计划为空且未发送委托，自动执行继续关闭。只读 Dashboard 已部署到腾讯云 `/opt/astock-dashboard`，Tailscale 客户端已安装并等待 Yancey 完成设备登录授权。
 
 ## 已完成
 
@@ -54,12 +54,14 @@ P0～P3、V3～V8 已按修复后的开盘数据口径重跑。P4 第 1 周原�
 - `ReviewBundle v2` 已增加下一交易日计划、TDX 执行复盘、结构化活动和研究索引，并保持 v1 可读；DashboardStore 已从 schema v1 兼容迁移至 v2，新增不可变 ResearchBundle 索引。
 - 首版研究库已发布策略、申万一级行业、100 日 5 分钟成交质量和 P4 独立复审四类报告，正文、来源 commit、数据截止时间和 SHA256 可在手机端查询。
 - runner 自动模拟委托已限制在工作日 `09:35～11:25`、`13:05～14:55`，午间和收盘后不再尝试发送；日终 TDX 事实镜像和后验复盘保持独立运行。
+- commit `e039115` 已区分本机与容器 Dashboard 监听地址；服务器运行镜像 `astock-dashboard:e039115`，Compose 只映射 `127.0.0.1:18080`，公网 IP 访问该端口超时。
+- 服务器已导入 1 个 2026-07-14 ReviewBundle 和 4 个 ResearchBundle；在线备份及独立目录真实恢复结果为 1 个 Bundle、4 个研究报告和 7 个 manifest 文件。
 
 ## 进行中
 
 - 复核数据已完整但三个策略仍未达到原成交质量阈值；该结果继续进入每日复盘，不再阻止 TDX 模拟账户前向执行，也不得通过改阈值或删不利订单美化报告。
 - 等待出现非空策略计划后验证首笔模拟下单返回和成交事实；在此之前需单独授权把 SDK 目录、模拟会话确认和自动执行开关写入本机配置，并重启 runner 验证常驻链路。
-- Dashboard 本地可交付版本已完成；服务器部署仍需现有腾讯云 SSH 目标／登录方式，以及按 Git 规则对 push 的单独确认。Docker 与 Tailscale 尚未在目标服务器实际执行。
+- Dashboard 服务器容器、数据导入和恢复演练已完成；Tailscale 当前为 `NeedsLogin`，完成设备登录后还需写入实际身份允许列表、配置 Serve 并验收手机访问。
 
 ## P4 首月四周验收（2026-07-13 至 2026-08-09）
 
@@ -77,13 +79,13 @@ P0～P3、V3～V8 已按修复后的开盘数据口径重跑。P4 第 1 周原�
 
 ### 第 3 周：Dashboard、离线制品与可恢复备份
 
-- [ ] 验收 React／TypeScript／Vite Dashboard、360px Android 浏览器布局和同一 `ReviewBundle` 生成的离线 HTML。
-- [ ] 验收 Docker build、SQLite＋Bundle＋SHA256 manifest 备份与独立目录恢复。
+- [x] 验收 React／TypeScript／Vite Dashboard、360px Android 浏览器布局和同一 `ReviewBundle` 生成的离线 HTML。
+- [x] 验收 Docker build、SQLite＋Bundle＋SHA256 manifest 备份与独立目录恢复。
 - [ ] GitHub Actions 只能运行 Python 测试、前端检查／构建和 `push: false` 的 Docker build，不得发布或部署。
 
 ### 第 4 周：隔离私网部署与真实演练
 
-- [ ] 获得逐项确认后，在现有服务器以独立目录、容器、数据卷和 `127.0.0.1:18080` 部署。
+- [x] 获得逐项确认后，在现有服务器以独立目录、容器、数据卷和 `127.0.0.1:18080` 部署。
 - [ ] 配置 Tailscale Serve；禁止 Funnel、公网端口和公网域名。
 - [ ] 验收 Android 浏览器私网访问、断网补传、60 秒数据延迟、90 秒断联告警、Windows runner／服务器容器重启和真实恢复演练。
 
@@ -101,8 +103,8 @@ P0～P3、V3～V8 已按修复后的开盘数据口径重跑。P4 第 1 周原�
 
 - 盘中实时延迟、断线和回调覆盖率需在交易时段验收。
 - 当前没有达到双验证目标的策略，前向账户仅用于执行链观察，不得表述为合格候选或可实盘策略。
-- 本机未安装 Docker，镜像和 Compose 只能由 GitHub CI 或 Ubuntu 服务器验证；安装服务器软件和 Git push 等待单独确认。
-- Tailscale 在腾讯云和 Android 之间的实际连通性尚未验证。
+- 本机仍未安装 Docker；镜像构建、Compose、健康检查已在 Ubuntu 服务器验证，Git push 尚未授权且未执行。
+- 腾讯云 Tailscale 客户端已安装但设备尚未登录，Android 私网访问仍待验证。
 - 当前策略计划标的并集为空，无法在不制造策略信号的前提下验收首笔 TDX 模拟委托和成交；不得为接口测试伪造策略订单。
 - 审计后的 commit `7e3c7f9`、`8757a2d` 已修改 CI 与 Docker／Compose 配置；本轮未继续触碰这些红线文件。运行 workflow、Docker、部署或外部发布仍需 Yancey 单独确认，并须纳入独立复审。
 
@@ -111,6 +113,7 @@ P0～P3、V3～V8 已按修复后的开盘数据口径重跑。P4 第 1 周原�
 - 2026-07-15：基于 commit `c6e835b` 运行 76 项 Python 自动测试、6 项 Vitest、TypeScript、Dashboard 生产构建和离线报告构建，全部通过；构建仅有 ECharts 入口大于 500KB 的非阻断警告。
 - 2026-07-15：使用本机真实 2026-07-14 TDX 模拟账户事实生成 `ReviewBundle v2`，发布 4 个 ResearchBundle，并建立 DashboardStore schema v2 查询库；独立临时目录备份恢复结果为 1 个 Bundle、4 个研究报告、7 个 manifest 文件。
 - 2026-07-15：浏览器验证六个主路由在 360px 和 1440px 均无页面级横向滚动；总览另覆盖 390、430、600、820、1024、1366、1920px。研究搜索可缩小到单一结果，行业报告抽屉可读取来源 commit、哈希和完整正文，浏览器控制台无错误。
+- 2026-07-15：服务器使用 Docker 29.6.1、Compose v5.3.1 构建并运行 `astock-dashboard:e039115`；健康检查返回 200，`ss` 仅显示 `127.0.0.1:18080`，公网 IP 访问该端口超时。导入 1 个 ReviewBundle 和 4 个 ResearchBundle 后，API 与 SPA 均返回 200；在线备份独立恢复为 1 个 Bundle、4 个研究报告、7 个 manifest 文件。Tailscale 1.98.9 已安装，状态为 `NeedsLogin`，尚未配置 Serve。
 
 - 2026-07-11：TDX 快照连续 30 次成功，HTTP 本地平均延迟 8.39ms、P95 10.73ms；该指标不代表交易所行情延迟。
 - 2026-07-11：TDX doctor 返回 5534 个证券代码、最新日线 2026-07-10、29 个近期交易日；THS 快照及源时间正常。
