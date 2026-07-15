@@ -480,6 +480,62 @@ class DashboardApiCase(unittest.TestCase):
                 self.assertEqual(overview["bundle"]["bundle_id"], bundle["bundle_id"])
                 self.assertIn("TEST", [item["code"] for item in overview["alerts"]])
 
+    def test_overview_projects_large_activity_payload_but_review_keeps_full_fact(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            app = create_app(
+                data_dir=root,
+                static_dir=root / "missing",
+                allowed_users={"yancey@example.com"},
+                ingest_token="secret",
+            )
+            bundle = build_review_bundle(
+                trading_day="2026-07-12",
+                generated_at=NOW,
+                git_sha="abc123",
+                data_cutoff=NOW.isoformat(),
+                report_sha256="r" * 64,
+                strategy_set_id="set-demo",
+                strategy_set={"selected": []},
+                accounts=[],
+                signals=[],
+                risk_decisions=[],
+                orders=[],
+                fills=[],
+                equity_curve=[],
+                reconciliation=[],
+                health={},
+                alerts=[],
+                known_limitations=[],
+                activity=[{
+                    "event_id": "event-large",
+                    "event_type": "SIGNAL_PLAN",
+                    "occurred_at": NOW.isoformat(),
+                    "payload": {"status": "READY", "raw": "x" * 100_000},
+                }],
+            )
+            browser = {"Tailscale-User-Login": "yancey@example.com"}
+            with TestClient(app) as client:
+                response = client.put(
+                    f"/api/v1/ingest/bundles/{bundle['bundle_id']}",
+                    json=bundle,
+                    headers={"Authorization": "Bearer secret"},
+                )
+                self.assertEqual(response.status_code, 200)
+                overview = client.get("/api/v1/overview", headers=browser)
+                detail = client.get(
+                    f"/api/v1/reviews/{bundle['bundle_id']}", headers=browser
+                )
+                self.assertEqual(overview.status_code, 200)
+                self.assertEqual(detail.status_code, 200)
+                self.assertEqual(
+                    overview.json()["bundle"]["activity"][0]["payload"], {"status": "READY"}
+                )
+                self.assertEqual(
+                    detail.json()["activity"][0]["payload"]["raw"], "x" * 100_000
+                )
+                self.assertLess(len(overview.content), len(detail.content) // 10)
+
     def test_existing_bundle_file_bytes_must_match_idempotent_upload(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

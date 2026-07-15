@@ -14,6 +14,25 @@ from astock.dashboard.storage import DashboardStore
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+ACTIVITY_SUMMARY_KEYS = ("message", "code", "reason", "status")
+
+
+def _overview_bundle(bundle: dict | None) -> dict | None:
+    if bundle is None:
+        return None
+    projected = dict(bundle)
+    activity = []
+    for event in bundle.get("activity", []):
+        item = dict(event)
+        payload = event.get("payload", {})
+        item["payload"] = (
+            {key: payload[key] for key in ACTIVITY_SUMMARY_KEYS if key in payload}
+            if isinstance(payload, dict)
+            else {}
+        )
+        activity.append(item)
+    projected["activity"] = activity
+    return projected
 
 
 def create_app(
@@ -98,7 +117,7 @@ def create_app(
     @app.get("/api/v1/overview", dependencies=browser)
     def overview(request: Request) -> dict:
         current = store(request)
-        bundle = current.latest_bundle()
+        bundle = _overview_bundle(current.latest_bundle())
         now = datetime.now(SHANGHAI)
         return {
             "bundle": bundle,

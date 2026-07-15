@@ -29,7 +29,7 @@ Dashboard 是 TDX 模拟交易系统的只读观察与复盘入口。它不下�
 
 ## API
 
-- `GET /api/v1/overview`：最新 Bundle、LiveStatus、告警和研究摘要。
+- `GET /api/v1/overview`：最新 Bundle、LiveStatus、告警和研究摘要；活动时间线只投影 `message`、`code`、`reason`、`status` 摘要字段，完整事件载荷仍由不可变 Bundle 和复盘详情接口保存与提供。
 - `GET /api/v1/reviews`、`GET /api/v1/reviews/{bundle_id}`：复盘历史与详情。
 - `GET /api/v1/research`、`GET /api/v1/research/{report_id}`：研究索引与不可变正文。
 - `PUT /api/v1/ingest/bundles/{bundle_id}`、`PUT /api/v1/ingest/research/{report_id}`、`PUT /api/v1/ingest/live-status/{source_id}`：仅供 Bearer token 同步客户端使用。
