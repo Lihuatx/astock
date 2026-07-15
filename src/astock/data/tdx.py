@@ -158,8 +158,9 @@ class TdxClient:
         today = datetime.now(SHANGHAI).date()
         previous_month_end = today.replace(day=1) - date.resolution
         trading_dates = self.get_trading_dates(previous_month_end.replace(day=1).strftime("%Y%m%d"), today.strftime("%Y%m%d"))
+        snapshot_price_ok = quote.last > 0 or (quote.bid_price > 0 and quote.ask_price > 0)
         return {
-            "ok": quote.last > 0 and bool(symbols) and bool(trading_dates),
+            "ok": snapshot_price_ok and bool(symbols) and bool(trading_dates),
             "snapshot_fields_ok": quote.bid_price >= 0 and quote.ask_price >= 0,
             "symbol_count": len(symbols),
             "daily_bar_count": len(bars),

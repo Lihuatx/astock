@@ -299,6 +299,30 @@ class ObservabilityCase(unittest.TestCase):
         self.assertEqual(len(runner.observability.renewals), 1)
         self.assertEqual(runner.observability.renewals[0][0:2], ("primary-runner", "runner-test"))
 
+    def test_runner_failure_retries_use_distinct_immutable_event_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            repository = ObservabilityRepository(Path(folder) / "observability.db")
+            try:
+                runner = object.__new__(Runner)
+                runner.observability = repository
+                runner.env_file = None
+                runner._run_command = lambda args: (_ for _ in ()).throw(  # type: ignore[method-assign]
+                    subprocess.CalledProcessError(1, args)
+                )
+                started = datetime.now(ZoneInfo("Asia/Shanghai")).replace(second=0, microsecond=0)
+                self.assertFalse(runner._run_cli_job("doctor", "doctor", started))
+                self.assertFalse(
+                    runner._run_cli_job("doctor", "doctor", started + timedelta(minutes=11))
+                )
+                failures = [
+                    item for item in repository.events()
+                    if item["event_type"] == "TASK_FAILED_ALERT"
+                ]
+                self.assertEqual(len(failures), 2)
+                self.assertNotEqual(failures[0]["event_id"], failures[1]["event_id"])
+            finally:
+                repository.close()
+
     def test_runner_does_not_send_orders_after_close_and_runs_review(self) -> None:
         class Lease:
             @staticmethod

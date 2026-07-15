@@ -76,7 +76,7 @@ class Runner:
         if self.observability.has_successful_run(job_type, now.date().isoformat()):
             return True
         attempts = self.observability.run_attempts(job_type, now.date().isoformat())
-        if len(attempts) >= 3:
+        if len(attempts) >= 6:
             return False
         if attempts and attempts[-1]["finished_at"]:
             last = datetime.fromisoformat(attempts[-1]["finished_at"])
@@ -98,7 +98,7 @@ class Runner:
                 "TASK_FAILED_ALERT",
                 datetime.now(SHANGHAI),
                 {"code": f"TASK_FAILED_{job_type}", "severity": "CRITICAL", "message": f"{job_type} failed", "error": str(error), "status": "ACTIVE"},
-                event_id=f"task-failed:{job_type}:{now.date().isoformat()}",
+                event_id=f"task-failed:{job_type}:{now.date().isoformat()}:{run_id}",
                 run_id=run_id,
             )
         else:

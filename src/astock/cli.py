@@ -317,9 +317,14 @@ def paper_signals(args: argparse.Namespace) -> int:
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     completed_end = now.date() if now.time() >= time(15, 10) else now.date() - timedelta(days=1)
     tdx_client = _tdx_client(settings, JsonlRawStore(settings.data_dir / "raw"))
-    missing_dates = tdx_client.get_trading_dates(
-        (date.fromisoformat(str(panel.dates[-1])) + timedelta(days=1)).strftime("%Y%m%d"),
-        completed_end.strftime("%Y%m%d"),
+    missing_start = date.fromisoformat(str(panel.dates[-1])) + timedelta(days=1)
+    missing_dates = (
+        tdx_client.get_trading_dates(
+            missing_start.strftime("%Y%m%d"),
+            completed_end.strftime("%Y%m%d"),
+        )
+        if missing_start <= completed_end
+        else []
     )
     inputs_refreshed = bool(missing_dates)
     if inputs_refreshed:
@@ -338,7 +343,14 @@ def paper_signals(args: argparse.Namespace) -> int:
             settings.tushare_base_token,
             settings.data_dir / "tushare" / "cache",
         )
-        if inputs_refreshed:
+        if fundamental_path.exists():
+            fundamentals = FundamentalPanel.load(fundamental_path)
+        fundamental_dates_match = (
+            fundamentals is not None
+            and len(fundamentals.dates) == len(panel.dates)
+            and str(fundamentals.dates[-1]) == str(panel.dates[-1])
+        )
+        if inputs_refreshed or not fundamental_dates_match:
             fundamentals = build_fundamental_panel(
                 client,
                 panel.dates,
@@ -346,8 +358,6 @@ def paper_signals(args: argparse.Namespace) -> int:
                 research_signal_dates(panel),
                 fundamental_path,
             )
-        elif fundamental_path.exists():
-            fundamentals = FundamentalPanel.load(fundamental_path)
         if fundamentals is None:
             raise ValueError("fundamental panel is required for the current strategy set")
         fundamentals = update_valuation_date(client, fundamentals, str(panel.dates[-1]), fundamental_path)

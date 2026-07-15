@@ -113,6 +113,23 @@ class BrokerCase(unittest.TestCase):
 
 
 class DataCase(unittest.TestCase):
+    def test_tdx_doctor_accepts_call_auction_bid_and_ask_before_last_price(self) -> None:
+        client = TdxClient("http://unused")
+        client.get_snapshot = lambda symbol: quote(price="0")  # type: ignore[method-assign]
+        call_auction = client.get_snapshot("000001.SZ")
+        call_auction = Quote(**{
+            **call_auction.__dict__,
+            "bid_price": Decimal("10.67"),
+            "ask_price": Decimal("10.67"),
+        })
+        client.get_snapshot = lambda symbol: call_auction  # type: ignore[method-assign]
+        client.get_stock_list = lambda: ["000001.SZ"]  # type: ignore[method-assign]
+        client.get_bars = lambda symbol, count_=5: [  # type: ignore[method-assign]
+            Bar("000001.SZ", NOW, Decimal("10"), Decimal("10"), Decimal("10"), Decimal("10"), 100, Decimal("1000"), "tdx")
+        ]
+        client.get_trading_dates = lambda start, end: [NOW.date()]  # type: ignore[method-assign]
+        self.assertTrue(client.doctor()["ok"])
+
     def test_quote_quality(self) -> None:
         primary = quote()
         stale = Quote(**{**primary.__dict__, "source_at": NOW - timedelta(minutes=2)})

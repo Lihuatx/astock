@@ -50,6 +50,8 @@ python -m astock.cli paper-prepare
 
 TDX 模拟交易配置仅通过进程环境或本机 `.env.demo` 提供。新量化模拟客户端设置 `ASTOCK_TDX_PLUGIN_DIR` 指向其 `PYPlugins/user` 目录；`ASTOCK_TDX_SIMULATION_CONFIRMED=true` 表示当前登录会话已由 Yancey 确认为模拟账户；`ASTOCK_PAPER_EXECUTION_ENABLED=true` 启用 runner 发送订单。`ASTOCK_TDX_SIM_ACCOUNT` 可选，未配置时按官方协议使用当前登录账户。程序不得输出账号值。普通实盘账户下单返回的 `Value=1` 会被拒绝；只有模拟账户自动下单返回 `Value=2` 且存在 `Wtbh` 时才写为 `ACK`。未配置 SDK 目录时保留 `TDX_BASE_URL` HTTP 兼容路径。
 
+集合竞价阶段 TDX 可能返回 `last=0`，但买一和卖一均为有效正价格；doctor 在此情况下按行情连接可用处理。runner 的同类任务每日最多尝试 6 次、失败后至少间隔 10 分钟，每次失败使用独立事件 ID，避免重试错误内容变化破坏不可变审计事件。
+
 官方协议依据：
 
 - [获取资金账户句柄](https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h7k4iqb1grk4/mindoc-1h7k4k5tk6q64.html)
