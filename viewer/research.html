@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="量化策略、因子与行业研究报告库">
+  <title>研究报告库 · Quant Ledger</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="research">
+  <div class="app-shell">
+    <div data-app-sidebar></div>
+    <main class="page-main" data-od-id="research-main">
+      <header class="mobile-header" data-od-id="mobile-header"><a class="brand" href="index.html"><span class="brand-mark">QL</span><span>研究库</span></a><span class="badge badge-secondary">24 份报告</span></header>
+      <div class="page-wrap">
+        <header class="page-header" data-od-id="research-header"><div><p class="eyebrow">研究依据 · 参数与结论可追溯</p><h1 class="page-title">研究报告库</h1><p class="page-subtitle">只把通过样本外检验、成本检验和参数稳定性检验的研究送入策略。</p></div><div class="header-actions"><button class="button button-primary" type="button" data-download>导出研究索引</button></div></header>
+
+        <section class="grid grid-4" data-od-id="research-metrics">
+          <article class="card metric-card" data-od-id="research-total"><div class="metric-label">报告总数</div><div class="metric-value">24</div><div class="metric-foot"><span>2026 年新增 9</span></div></article>
+          <article class="card metric-card" data-od-id="research-accepted"><div class="metric-label">已接受</div><div class="metric-value positive">11</div><div class="metric-foot"><span>可用于生产策略</span></div></article>
+          <article class="card metric-card" data-od-id="research-rejected"><div class="metric-label">已拒绝</div><div class="metric-value negative">8</div><div class="metric-foot"><span>保留失败原因</span></div></article>
+          <article class="card metric-card" data-od-id="research-reviewing"><div class="metric-label">评审中</div><div class="metric-value">5</div><div class="metric-foot"><span>2 份等待样本外结果</span></div></article>
+        </section>
+
+        <section class="section" data-od-id="research-library">
+          <div class="section-heading"><div><h2>全部研究</h2><p>搜索标题、因子、行业或结论；结果即时过滤。</p></div></div>
+          <div class="filter-bar"><div class="chips" data-report-categories><button class="chip active" type="button" data-category="all">全部</button><button class="chip" type="button" data-category="strategy">策略研究</button><button class="chip" type="button" data-category="factor">因子研究</button><button class="chip" type="button" data-category="industry">行业研究</button><button class="chip" type="button" data-category="stability">参数稳定性</button></div><label class="search-field"><span class="sr-only">搜索研究报告</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" placeholder="搜索报告、因子或结论" data-report-search></label></div>
+          <div class="report-list">
+            <article class="report-row" data-report-row data-category="factor" data-od-id="report-quality-factor"><div><div class="report-title">盈利质量因子在中证 800 的稳定性</div><p class="report-desc">滚动三年 IC、换手成本与行业中性化检验</p></div><span class="badge badge-secondary">因子研究</span><time datetime="2026-07-11">07-11</time><span class="badge badge-positive">接受</span><button type="button" data-drawer-target="report-drawer" aria-label="查看报告详情">›</button></article>
+            <article class="report-row" data-report-row data-category="stability" data-od-id="report-smallcap-stability"><div><div class="report-title">小市值反转组合参数扩展</div><p class="report-desc">持有期与调仓阈值的样本外敏感性</p></div><span class="badge badge-secondary">参数稳定性</span><time datetime="2026-07-08">07-08</time><span class="badge badge-danger">拒绝</span><button type="button" data-drawer-target="report-drawer" aria-label="查看报告详情">›</button></article>
+            <article class="report-row" data-report-row data-category="strategy" data-od-id="report-multifactor-v34"><div><div class="report-title">多因子中频轮动 v3.4 年度复核</div><p class="report-desc">2022–2025 滚动窗口与交易成本复算</p></div><span class="badge badge-secondary">策略研究</span><time datetime="2026-06-30">06-30</time><span class="badge badge-positive">接受</span><button type="button" data-drawer-target="report-drawer" aria-label="查看报告详情">›</button></article>
+            <article class="report-row" data-report-row data-category="industry" data-od-id="report-optical-sector"><div><div class="report-title">光模块行业拥挤度与波动传导</div><p class="report-desc">成交额集中度、北向持仓与价格冲击</p></div><span class="badge badge-secondary">行业研究</span><time datetime="2026-06-26">06-26</time><span class="badge badge-warning">评审中</span><button type="button" data-drawer-target="report-drawer" aria-label="查看报告详情">›</button></article>
+            <article class="report-row" data-report-row data-category="factor" data-od-id="report-low-vol"><div><div class="report-title">低波动因子的行业偏置修正</div><p class="report-desc">金融权重暴露与风险预算分层</p></div><span class="badge badge-secondary">因子研究</span><time datetime="2026-06-18">06-18</time><span class="badge badge-positive">接受</span><button type="button" data-drawer-target="report-drawer" aria-label="查看报告详情">›</button></article>
+            <article class="report-row" data-report-row data-category="strategy" data-od-id="report-opening-auction"><div><div class="report-title">集合竞价信号的执行价值</div><p class="report-desc">开盘跳空过滤与实际滑点复盘</p></div><span class="badge badge-secondary">策略研究</span><time datetime="2026-06-10">06-10</time><span class="badge badge-danger">拒绝</span><button type="button" data-drawer-target="report-drawer" aria-label="查看报告详情">›</button></article>
+          </div>
+          <div class="empty-state" data-report-empty><strong>没有匹配的研究报告</strong><p>尝试更短的关键词或切换研究分类。</p></div>
+        </section>
+
+        <section class="section grid grid-2" data-od-id="research-governance">
+          <article class="card" data-od-id="research-acceptance-gate"><div class="card-header"><div><h2 class="card-title">接受门槛</h2><p class="card-note">研究进入生产策略前的统一检查</p></div></div><div class="review-list"><div class="review-item"><span class="review-bar good"></span><div><h3>样本外方向一致</h3><p>至少两个独立滚动窗口保持同向。</p></div><span class="num">必须</span></div><div class="review-item"><span class="review-bar good"></span><div><h3>成本后仍有收益</h3><p>使用真实费率与保守滑点重新计算。</p></div><span class="num">必须</span></div><div class="review-item"><span class="review-bar good"></span><div><h3>参数邻域稳定</h3><p>相邻参数不出现断崖式收益变化。</p></div><span class="num">必须</span></div></div></article>
+          <article class="card" data-od-id="research-annual-results"><div class="card-header"><div><h2 class="card-title">年度研究结果</h2><p class="card-note">2026 年模拟研究记录</p></div></div><div class="detail-list"><div class="detail-row"><span>已完成</span><strong class="num">9 份</strong></div><div class="detail-row"><span>接受率</span><strong class="num">44.4%</strong></div><div class="detail-row"><span>进入生产</span><strong class="num">2 项</strong></div><div class="detail-row"><span>因成本拒绝</span><strong class="num">3 项</strong></div><div class="detail-row"><span>因不稳定拒绝</span><strong class="num">2 项</strong></div></div></article>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div data-app-mobile-nav></div>
+  <div class="drawer-overlay" id="report-drawer" aria-hidden="true" data-od-id="report-detail-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="report-title"><div class="drawer-header"><div><p class="eyebrow">因子研究 · 已接受</p><h2 id="report-title">盈利质量因子在中证 800 的稳定性</h2></div><button class="button icon-button" type="button" data-drawer-close aria-label="关闭报告">×</button></div><section class="drawer-section" data-od-id="report-drawer-conclusion"><h3>结论</h3><p>接受。2018–2025 滚动三年窗口中，行业中性后的 Rank IC 均值保持为正；使用双边千分之 1.2 的成本假设后，组合仍有稳定超额。</p></section><section class="drawer-section" data-od-id="report-drawer-evidence"><h3>关键证据</h3><div class="detail-list"><div class="detail-row"><span>样本期</span><strong class="num">2014–2025</strong></div><div class="detail-row"><span>Rank IC 均值</span><strong class="num">0.041</strong></div><div class="detail-row"><span>ICIR</span><strong class="num">0.63</strong></div><div class="detail-row"><span>成本后年化超额</span><strong class="num positive">+4.8%</strong></div><div class="detail-row"><span>最差滚动窗口</span><strong class="num">+0.7%</strong></div></div></section><section class="drawer-section" data-od-id="report-drawer-usage"><h3>使用边界</h3><p>仅用于中证 800 成分股；月度换手上限 35%；行业中性约束必须开启，不适用于微盘股组合。</p></section></aside></div>
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

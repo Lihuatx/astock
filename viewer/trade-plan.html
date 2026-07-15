@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="明日 A 股量化交易计划">
+  <title>明日交易计划 · Quant Ledger</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="plan">
+  <div class="app-shell">
+    <div data-app-sidebar></div>
+    <main class="page-main" data-od-id="trade-plan-main">
+      <header class="mobile-header" data-od-id="mobile-header"><a class="brand" href="index.html"><span class="brand-mark">QL</span><span>交易计划</span></a><span class="badge badge-warning">4 笔待执行</span></header>
+      <div class="page-wrap">
+        <header class="page-header" data-od-id="trade-plan-header">
+          <div><p class="eyebrow">模拟数据 · 交易日 2026-07-15</p><h1 class="page-title">明日交易计划</h1><p class="page-subtitle">策略信号已冻结；执行前只需确认动作、理由与不执行条件。</p></div>
+          <div class="header-actions"><div class="date-switcher" aria-label="交易日期切换" data-od-id="plan-date-switcher"><button class="button icon-button" type="button" data-date-step="-1" aria-label="上一个交易日">←</button><time class="date-label" datetime="2026-07-14" data-current-date>2026-07-14</time><button class="button icon-button" type="button" data-date-step="1" aria-label="下一个交易日">→</button></div><button class="button button-primary" type="button" data-download>导出交易清单</button></div>
+        </header>
+
+        <section class="grid grid-4" data-od-id="plan-metrics">
+          <article class="card metric-card" data-od-id="plan-target-position"><div class="metric-label">明日目标仓位</div><div class="metric-value">76.0%</div><div class="metric-foot"><span class="negative">-1.76pct</span><span>较今日</span></div></article>
+          <article class="card metric-card" data-od-id="plan-orders"><div class="metric-label">预计委托</div><div class="metric-value">4 笔</div><div class="metric-foot"><span>买入 2 · 卖出 2</span></div></article>
+          <article class="card metric-card" data-od-id="plan-net-cash"><div class="metric-label">预计净卖出</div><div class="metric-value positive">¥25,600</div><div class="metric-foot"><span>提升现金缓冲</span></div></article>
+          <article class="card metric-card" data-od-id="plan-turnover"><div class="metric-label">预计换手</div><div class="metric-value">9.2%</div><div class="metric-foot"><span>低于 12% 上限</span></div></article>
+        </section>
+
+        <section class="section grid grid-main" data-od-id="plan-rationale-and-constraints">
+          <article class="card card-strong" data-od-id="plan-rationale">
+            <div class="card-header"><div><p class="plan-date">策略：多因子中频轮动 v3.4 · 数据截止 2026-07-14 15:35</p><h2 class="plan-thesis">降低高波动成长暴露，补回低估值金融仓位。</h2></div><span class="badge badge-positive">风控通过</span></div>
+            <p class="page-subtitle">盈利质量因子继续有效，但组合在光通信方向的预估波动率升至 19.8%；本次调整优先降低集中度，而不是扩大总仓位。</p>
+            <div class="divider"></div>
+            <div class="grid grid-3">
+              <div><div class="metric-label">因子贡献</div><strong class="num secondary">质量 +0.42</strong></div>
+              <div><div class="metric-label">风险贡献</div><strong class="num negative">波动 -0.31</strong></div>
+              <div><div class="metric-label">成本估计</div><strong class="num">¥182</strong></div>
+            </div>
+          </article>
+          <aside class="card" data-od-id="plan-execution-constraints">
+            <div class="card-header"><div><h2 class="card-title">统一不执行条件</h2><p class="card-note">任一命中则暂停对应委托</p></div></div>
+            <div class="review-list">
+              <div class="review-item"><span class="review-bar warn"></span><div><h3>指数跳空</h3><p>沪深 300 高开或低开超过 1.5%</p></div></div>
+              <div class="review-item"><span class="review-bar warn"></span><div><h3>流动性不足</h3><p>同期成交额低于 20 日中位数 60%</p></div></div>
+              <div class="review-item"><span class="review-bar warn"></span><div><h3>系统数据过期</h3><p>行情或账户同步延迟超过 60 秒</p></div></div>
+            </div>
+          </aside>
+        </section>
+
+        <section class="section" data-od-id="planned-orders">
+          <div class="section-heading"><div><h2>目标交易</h2><p>按执行优先级排序，买卖方向采用 A 股习惯标色。</p></div></div>
+          <div class="filter-bar">
+            <div class="chips" data-filter-group data-filter-target="[data-plan-row]"><button class="chip active" type="button" data-filter="all">全部 4</button><button class="chip" type="button" data-filter="buy">买入 2</button><button class="chip" type="button" data-filter="sell">卖出 2</button></div>
+            <select class="select-field" aria-label="计划排序" style="width:auto"><option>按执行优先级</option><option>按目标金额</option><option>按仓位变化</option></select>
+          </div>
+          <div class="data-table-wrap">
+            <table class="data-table responsive-table">
+              <thead><tr><th>股票</th><th>动作</th><th class="table-num">当前仓位</th><th class="table-num">目标仓位</th><th class="table-num">预计数量</th><th>执行窗口</th><th>计划原因</th><th></th></tr></thead>
+              <tbody>
+                <tr data-plan-row data-kind="buy"><td data-label="股票"><strong>宁德时代</strong><span class="stock-code">300750</span></td><td data-label="动作"><span class="action-buy">买入</span></td><td class="table-num" data-label="当前仓位">10.0%</td><td class="table-num" data-label="目标仓位">14.0%</td><td class="table-num" data-label="预计数量">200 股</td><td data-label="执行窗口" class="num">09:45–10:15</td><td data-label="原因" class="muted">质量分位提升，动量转正</td><td data-label="详情"><button type="button" data-drawer-target="plan-stock-drawer" data-stock-code="300750">查看</button></td></tr>
+                <tr data-plan-row data-kind="buy"><td data-label="股票"><strong>中国平安</strong><span class="stock-code">601318</span></td><td data-label="动作"><span class="action-buy">买入</span></td><td class="table-num" data-label="当前仓位">8.0%</td><td class="table-num" data-label="目标仓位">11.0%</td><td class="table-num" data-label="预计数量">600 股</td><td data-label="执行窗口" class="num">10:00–10:30</td><td data-label="原因" class="muted">估值修复，风险预算释放</td><td data-label="详情"><button type="button" data-drawer-target="plan-stock-drawer" data-stock-code="601318">查看</button></td></tr>
+                <tr data-plan-row data-kind="sell"><td data-label="股票"><strong>中际旭创</strong><span class="stock-code">300308</span></td><td data-label="动作"><span class="action-sell">卖出</span></td><td class="table-num" data-label="当前仓位">12.0%</td><td class="table-num" data-label="目标仓位">8.0%</td><td class="table-num" data-label="预计数量">400 股</td><td data-label="执行窗口" class="num">14:30–14:50</td><td data-label="原因" class="muted">波动率超阈值，集中度偏高</td><td data-label="详情"><button type="button" data-drawer-target="plan-stock-drawer" data-stock-code="300308">查看</button></td></tr>
+                <tr data-plan-row data-kind="sell"><td data-label="股票"><strong>贵州茅台</strong><span class="stock-code">600519</span></td><td data-label="动作"><span class="action-sell">卖出</span></td><td class="table-num" data-label="当前仓位">18.0%</td><td class="table-num" data-label="目标仓位">15.0%</td><td class="table-num" data-label="预计数量">100 股</td><td data-label="执行窗口" class="num">10:15–10:45</td><td data-label="原因" class="muted">控制单票上限，增加现金缓冲</td><td data-label="详情"><button type="button" data-drawer-target="plan-stock-drawer" data-stock-code="600519">查看</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section grid grid-2" data-od-id="plan-change-and-review">
+          <article class="card" data-od-id="plan-change-from-yesterday"><div class="card-header"><div><h2 class="card-title">相较昨日变化</h2><p class="card-note">信号与风险预算变化</p></div></div><div class="timeline"><div class="timeline-item"><div class="timeline-time">新增</div><h3 class="timeline-title">中国平安进入目标组合</h3><p class="timeline-copy">价值分位由 72% 升至 88%，替代昨日现金仓位。</p></div><div class="timeline-item"><div class="timeline-time">下调</div><h3 class="timeline-title">中际旭创目标仓位降低 4pct</h3><p class="timeline-copy">预估波动率连续两日超过组合阈值。</p></div><div class="timeline-item"><div class="timeline-time">不变</div><h3 class="timeline-title">总仓位保持中性</h3><p class="timeline-copy">市场宽度未确认，不扩大净暴露。</p></div></div></article>
+          <article class="card" data-od-id="plan-review-checklist"><div class="card-header"><div><h2 class="card-title">执行前 Review</h2><p class="card-note">明早 09:20 前确认</p></div><span class="badge badge-warning">1 项待确认</span></div><div class="review-list"><div class="review-item"><span class="review-bar good"></span><div><h3>资金与目标仓位匹配</h3><p>预计可用现金充足，无融资占用。</p></div><span class="badge badge-positive">通过</span></div><div class="review-item"><span class="review-bar good"></span><div><h3>个股与行业上限</h3><p>交易后最大单票 15%，行业 29.4%。</p></div><span class="badge badge-positive">通过</span></div><div class="review-item"><span class="review-bar warn"></span><div><h3>集合竞价状态</h3><p>需在开盘前根据跳空与成交量确认。</p></div><span class="badge badge-warning">待确认</span></div></div></article>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div data-app-mobile-nav></div>
+  <div class="drawer-overlay" id="plan-stock-drawer" aria-hidden="true" data-od-id="plan-stock-detail-drawer"><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="plan-stock-title"><div class="drawer-header"><div><p class="eyebrow">目标交易 · 模拟</p><h2 id="plan-stock-title"><span data-stock-field="name">宁德时代</span> <span class="stock-code" data-stock-field="code">300750</span></h2></div><button class="button icon-button" type="button" data-drawer-close aria-label="关闭详情">×</button></div><section class="drawer-section" data-od-id="plan-drawer-signal"><h3>信号拆解</h3><div class="detail-list"><div class="detail-row"><span>盈利质量</span><strong class="num" data-stock-field="quality">84% 分位</strong></div><div class="detail-row"><span>20 日动量</span><strong class="num positive" data-stock-field="momentum">+6.2%</strong></div><div class="detail-row"><span>预估波动率</span><strong class="num" data-stock-field="volatility">17.4%</strong></div><div class="detail-row"><span>组合边际贡献</span><strong class="num secondary" data-stock-field="contribution">+0.18</strong></div></div></section><section class="drawer-section" data-od-id="plan-drawer-order"><h3>委托约束</h3><p data-stock-field="order">分两笔等量限价买入；首笔不早于 09:45，价格偏离决策价不得超过 0.8%。</p></section><section class="drawer-section" data-od-id="plan-drawer-risk"><h3>退出条件</h3><p data-stock-field="exit">盈利质量分位跌破 65%，或 20 日波动率超过 24% 时降回基准仓位。</p></section></aside></div>
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

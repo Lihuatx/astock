@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="量化交易系统运行状态与异常日志">
+  <title>系统运行状态 · Quant Ledger</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="system">
+  <div class="app-shell">
+    <div data-app-sidebar></div>
+    <main class="page-main" data-od-id="system-main">
+      <header class="mobile-header" data-od-id="mobile-header"><a class="brand" href="index.html"><span class="brand-mark">QL</span><span>系统状态</span></a><span class="badge badge-positive">可执行</span></header>
+      <div class="page-wrap">
+        <header class="page-header" data-od-id="system-header"><div><p class="eyebrow">实时状态 · 最后刷新 15:35:20</p><h1 class="page-title">系统运行状态</h1><p class="page-subtitle">确认行情、策略、账户与任务链路真的在运行，而且数据足够新鲜。</p></div><div class="header-actions"><button class="button" type="button" data-toggle-details="raw-health-log" aria-expanded="false">查看日志</button><button class="button button-primary" type="button" data-download>导出诊断</button></div></header>
+
+        <section class="status-grid" data-od-id="system-core-status">
+          <article class="card status-card" data-od-id="status-tdx"><div class="status-card-head"><h3>TDX 行情</h3><span class="badge badge-positive">在线</span></div><div class="status-value">8 秒前</div><p class="status-meta">行情日期 2026-07-14</p></article>
+          <article class="card status-card" data-od-id="status-data-date"><div class="status-card-head"><h3>数据日期</h3><span class="badge badge-positive">最新</span></div><div class="status-value">2026-07-14</div><p class="status-meta">收盘数据已校验</p></article>
+          <article class="card status-card" data-od-id="status-runner"><div class="status-card-head"><h3>Runner 心跳</h3><span class="badge badge-positive">正常</span></div><div class="status-value">5 秒前</div><p class="status-meta">worker-01 · pid 4821</p></article>
+          <article class="card status-card" data-od-id="status-sync"><div class="status-card-head"><h3>账户同步</h3><span class="badge badge-warning">关注</span></div><div class="status-value">26 秒</div><p class="status-meta">阈值 60 秒</p></article>
+        </section>
+
+        <section class="section grid grid-main" data-od-id="pipeline-and-task-summary">
+          <article class="card card-strong" data-od-id="pipeline-readiness"><div class="card-header"><div><p class="plan-date">明日开盘链路</p><h2 class="plan-thesis">核心链路可用，1 条同步延迟异常待确认。</h2></div><span class="badge badge-positive">允许执行</span></div><div class="timeline"><div class="timeline-item"><div class="timeline-time">15:30:08</div><h3 class="timeline-title">TDX 收盘行情入库</h3><p class="timeline-copy">5,362 个证券快照，缺失 0，校验通过。</p></div><div class="timeline-item"><div class="timeline-time">15:32:41</div><h3 class="timeline-title">策略 runner 完成</h3><p class="timeline-copy">生成 4 笔目标交易，风险检查通过。</p></div><div class="timeline-item"><div class="timeline-time">15:35:12</div><h3 class="timeline-title">账户账本同步</h3><p class="timeline-copy">持仓与成交一致；回报延迟 26 秒。</p></div></div></article>
+          <aside class="card" data-od-id="task-summary"><div class="card-header"><div><h2 class="card-title">今日任务</h2><p class="card-note">计划任务与失败重试</p></div></div><div class="grid grid-2"><div><div class="metric-label">已完成</div><div class="metric-value positive">18</div></div><div><div class="metric-label">失败</div><div class="metric-value negative">1</div></div><div><div class="metric-label">重试成功</div><div class="metric-value">1</div></div><div><div class="metric-label">运行中</div><div class="metric-value">0</div></div></div><div class="divider"></div><div class="review-list"><div class="review-item"><span class="review-bar good"></span><div><h3>日线数据完整率</h3><p>5,362 / 5,362</p></div><span class="num">100%</span></div><div class="review-item"><span class="review-bar warn"></span><div><h3>账户回报延迟</h3><p>峰值 26 秒</p></div><span class="num">43%</span></div></div></aside>
+        </section>
+
+        <section class="section" data-od-id="system-alerts">
+          <div class="section-heading"><div><h2>异常与日志</h2><p><span class="num" data-open-issue-count>1</span> 条待确认；确认只改变人工状态，不删除原始日志。</p></div></div>
+          <div class="filter-bar"><div class="chips" data-filter-group data-filter-target="[data-log-entry]"><button class="chip active" type="button" data-filter="all">全部</button><button class="chip" type="button" data-filter="error">错误</button><button class="chip" type="button" data-filter="warning">警告</button><button class="chip" type="button" data-filter="resolved">已确认</button></div><label class="search-field"><span class="sr-only">搜索日志</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input type="search" placeholder="搜索任务或错误代码"></label></div>
+          <div class="card">
+            <div class="log-list">
+              <article class="log-entry" data-log-entry data-status="warning" data-od-id="log-account-latency"><time datetime="2026-07-14T15:34:52">15:34:52</time><span class="badge badge-warning">警告</span><strong>account_sync</strong><span class="log-message">broker_response_lag=26s，低于阻断阈值 60s</span><button class="button ack-button" type="button" data-ack>确认</button></article>
+              <article class="log-entry resolved" data-log-entry data-status="resolved" data-od-id="log-runner-retry"><time datetime="2026-07-14T15:31:18">15:31:18</time><span class="badge badge-danger">错误</span><strong>factor_runner</strong><span class="log-message">cache_lock_timeout，自动重试 1/3 后成功</span><button class="button ack-button" type="button" disabled>已确认</button></article>
+              <article class="log-entry" data-log-entry data-status="info" data-od-id="log-tdx-ingest"><time datetime="2026-07-14T15:30:08">15:30:08</time><span class="badge badge-secondary">信息</span><strong>tdx_ingest</strong><span class="log-message">daily_bar_ingest 完成，rows=5362，missing=0</span><span></span></article>
+              <article class="log-entry" data-log-entry data-status="info" data-od-id="log-reconcile"><time datetime="2026-07-14T15:35:12">15:35:12</time><span class="badge badge-secondary">信息</span><strong>reconcile</strong><span class="log-message">position_diff=0，cash_diff=0.00，status=passed</span><span></span></article>
+            </div>
+          </div>
+        </section>
+
+        <section class="section grid grid-2" data-od-id="dependencies-and-raw-log">
+          <article class="card" data-od-id="dependency-status"><div class="card-header"><div><h2 class="card-title">依赖状态</h2><p class="card-note">本地服务与数据目录</p></div></div><div class="detail-list"><div class="detail-row"><span>TDX 数据目录</span><strong class="num positive">可读</strong></div><div class="detail-row"><span>策略数据库</span><strong class="num positive">可写</strong></div><div class="detail-row"><span>券商回报目录</span><strong class="num positive">可读</strong></div><div class="detail-row"><span>调度锁</span><strong class="num positive">空闲</strong></div><div class="detail-row"><span>磁盘剩余</span><strong class="num">128.4 GB</strong></div></div></article>
+          <article class="card" id="raw-health-log" hidden data-od-id="raw-health-log"><div class="card-header"><div><h2 class="card-title">健康检查原始日志</h2><p class="card-note">最近一次探测 · 15:35:20</p></div><button class="button" type="button" data-copy="healthcheck-20260714-153520">复制检查编号</button></div><div class="log-message">tdx.connected=true<br>tdx.last_tick_age=8s<br>runner.heartbeat_age=5s<br>account.sync_lag=26s<br>reconcile.position_diff=0<br>reconcile.cash_diff=0.00<br>execution.allowed=true</div></article>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div data-app-mobile-nav></div>
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

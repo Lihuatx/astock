@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="当日量化交易执行复盘">
+  <title>当日执行复盘 · Quant Ledger</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body data-page="execution">
+  <div class="app-shell">
+    <div data-app-sidebar></div>
+    <main class="page-main" data-od-id="execution-main">
+      <header class="mobile-header" data-od-id="mobile-header"><a class="brand" href="index.html"><span class="brand-mark">QL</span><span>执行复盘</span></a><span class="badge badge-warning">1 笔需复核</span></header>
+      <div class="page-wrap">
+        <header class="page-header" data-od-id="execution-header"><div><p class="eyebrow">模拟数据 · 收盘复盘</p><h1 class="page-title">当日执行复盘</h1><p class="page-subtitle">核对计划与成交，定位滑点、未成交原因和账实差异。</p></div><div class="header-actions"><div class="date-switcher" aria-label="交易日期切换" data-od-id="execution-date-switcher"><button class="button icon-button" type="button" data-date-step="-1" aria-label="上一个交易日">←</button><time class="date-label" datetime="2026-07-14" data-current-date>2026-07-14</time><button class="button icon-button" type="button" data-date-step="1" aria-label="下一个交易日">→</button></div><button class="button" type="button" data-download>导出复盘</button></div></header>
+
+        <section class="grid grid-5" data-od-id="execution-metrics">
+          <article class="card metric-card" data-od-id="execution-planned-orders"><div class="metric-label">计划委托</div><div class="metric-value">6 笔</div><div class="metric-foot"><span>买入 3 · 卖出 3</span></div></article>
+          <article class="card metric-card" data-od-id="execution-filled-orders"><div class="metric-label">成交</div><div class="metric-value">5 笔</div><div class="metric-foot"><span class="positive">83.3%</span><span>成交率</span></div></article>
+          <article class="card metric-card" data-od-id="execution-cancelled-orders"><div class="metric-label">未成交</div><div class="metric-value">1 笔</div><div class="metric-foot"><span>主动撤单</span></div></article>
+          <article class="card metric-card" data-od-id="execution-slippage"><div class="metric-label">平均滑点</div><div class="metric-value positive">-3.2bp</div><div class="metric-foot"><span>优于决策价</span></div></article>
+          <article class="card metric-card" data-od-id="execution-ledger-diff"><div class="metric-label">账实差异</div><div class="metric-value">¥0</div><div class="metric-foot"><span class="positive">已核对</span></div></article>
+        </section>
+
+        <section class="section grid grid-main" data-od-id="execution-verdict-and-quality">
+          <article class="card card-strong" data-od-id="execution-verdict"><div class="card-header"><div><p class="plan-date">执行结论</p><h2 class="plan-thesis">总体按计划完成，未追价撤单符合规则。</h2></div><span class="badge badge-positive">质量良好</span></div><p class="page-subtitle">5 笔成交均在允许滑点区间内；中际旭创尾盘卖单因价格偏离决策价 11bp 主动撤销，未形成纪律偏差。</p><div class="divider"></div><div class="grid grid-3"><div><div class="metric-label">成交额</div><strong class="num">¥188,740</strong></div><div><div class="metric-label">手续费</div><strong class="num">¥96.42</strong></div><div><div class="metric-label">滑点成本</div><strong class="num positive">-¥60.40</strong></div></div></article>
+          <aside class="card" data-od-id="execution-quality-score"><div class="card-header"><div><h2 class="card-title">执行质量</h2><p class="card-note">规则符合度与成交质量</p></div><strong class="metric-value num">92</strong></div><div class="risk-list"><div><div class="risk-row-head"><span>计划符合度</span><span class="num">100%</span></div><div class="progress-track"><div class="progress-fill" style="--progress:100%"></div></div></div><div><div class="risk-row-head"><span>价格质量</span><span class="num">88%</span></div><div class="progress-track"><div class="progress-fill" style="--progress:88%"></div></div></div><div><div class="risk-row-head"><span>时机纪律</span><span class="num">90%</span></div><div class="progress-track"><div class="progress-fill" style="--progress:90%"></div></div></div></div></aside>
+        </section>
+
+        <section class="section" data-od-id="execution-orders">
+          <div class="section-heading"><div><h2>委托与成交</h2><p>将计划、实际委托和最终成交放在一行核对。</p></div></div>
+          <div class="filter-bar"><div class="chips" data-filter-group data-filter-target="[data-execution-row]"><button class="chip active" type="button" data-filter="all">全部 6</button><button class="chip" type="button" data-filter="filled">已成交 5</button><button class="chip" type="button" data-filter="cancelled">已撤单 1</button></div><select class="select-field" aria-label="委托方向筛选" style="width:auto"><option>全部方向</option><option>买入</option><option>卖出</option></select></div>
+          <div class="data-table-wrap"><table class="data-table responsive-table"><thead><tr><th>股票</th><th>方向</th><th class="table-num">计划数量</th><th class="table-num">委托数量</th><th class="table-num">成交数量</th><th class="table-num">决策价</th><th class="table-num">成交均价</th><th class="table-num">滑点</th><th>状态</th></tr></thead><tbody>
+            <tr data-execution-row data-status="filled"><td data-label="股票"><strong>宁德时代</strong><span class="stock-code">300750</span></td><td data-label="方向"><span class="action-buy">买入</span></td><td class="table-num" data-label="计划数量">200</td><td class="table-num" data-label="委托数量">200</td><td class="table-num" data-label="成交数量">200</td><td class="table-num" data-label="决策价">¥249.80</td><td class="table-num" data-label="成交均价">¥249.72</td><td class="table-num positive" data-label="滑点">-3.2bp</td><td data-label="状态"><span class="badge badge-positive">已成交</span></td></tr>
+            <tr data-execution-row data-status="filled"><td data-label="股票"><strong>中国平安</strong><span class="stock-code">601318</span></td><td data-label="方向"><span class="action-buy">买入</span></td><td class="table-num" data-label="计划数量">600</td><td class="table-num" data-label="委托数量">600</td><td class="table-num" data-label="成交数量">600</td><td class="table-num" data-label="决策价">¥47.42</td><td class="table-num" data-label="成交均价">¥47.44</td><td class="table-num negative" data-label="滑点">+4.2bp</td><td data-label="状态"><span class="badge badge-positive">已成交</span></td></tr>
+            <tr data-execution-row data-status="filled"><td data-label="股票"><strong>贵州茅台</strong><span class="stock-code">600519</span></td><td data-label="方向"><span class="action-sell">卖出</span></td><td class="table-num" data-label="计划数量">100</td><td class="table-num" data-label="委托数量">100</td><td class="table-num" data-label="成交数量">100</td><td class="table-num" data-label="决策价">¥1,562.00</td><td class="table-num" data-label="成交均价">¥1,563.40</td><td class="table-num positive" data-label="滑点">-9.0bp</td><td data-label="状态"><span class="badge badge-positive">已成交</span></td></tr>
+            <tr data-execution-row data-status="filled"><td data-label="股票"><strong>招商银行</strong><span class="stock-code">600036</span></td><td data-label="方向"><span class="action-buy">买入</span></td><td class="table-num" data-label="计划数量">500</td><td class="table-num" data-label="委托数量">500</td><td class="table-num" data-label="成交数量">500</td><td class="table-num" data-label="决策价">¥42.18</td><td class="table-num" data-label="成交均价">¥42.17</td><td class="table-num positive" data-label="滑点">-2.4bp</td><td data-label="状态"><span class="badge badge-positive">已成交</span></td></tr>
+            <tr data-execution-row data-status="filled"><td data-label="股票"><strong>科大讯飞</strong><span class="stock-code">002230</span></td><td data-label="方向"><span class="action-sell">卖出</span></td><td class="table-num" data-label="计划数量">300</td><td class="table-num" data-label="委托数量">300</td><td class="table-num" data-label="成交数量">300</td><td class="table-num" data-label="决策价">¥51.26</td><td class="table-num" data-label="成交均价">¥51.31</td><td class="table-num positive" data-label="滑点">-9.8bp</td><td data-label="状态"><span class="badge badge-positive">已成交</span></td></tr>
+            <tr data-execution-row data-status="cancelled"><td data-label="股票"><strong>中际旭创</strong><span class="stock-code">300308</span></td><td data-label="方向"><span class="action-sell">卖出</span></td><td class="table-num" data-label="计划数量">400</td><td class="table-num" data-label="委托数量">400</td><td class="table-num" data-label="成交数量">0</td><td class="table-num" data-label="决策价">¥198.80</td><td class="table-num" data-label="成交均价">—</td><td class="table-num" data-label="滑点">—</td><td data-label="状态"><span class="badge badge-warning">已撤单</span></td></tr>
+          </tbody></table></div>
+        </section>
+
+        <section class="section grid grid-2" data-od-id="execution-review-and-reconcile">
+          <article class="card" data-od-id="execution-errors"><div class="card-header"><div><h2 class="card-title">错误与偏差</h2><p class="card-note">区分系统错误与规则内未成交</p></div><span class="badge badge-positive">0 个错误</span></div><div class="review-list"><div class="review-item"><span class="review-bar good"></span><div><h3>无重复委托或方向错误</h3><p>实际委托与计划指令逐笔一致。</p></div><span class="badge badge-positive">通过</span></div><div class="review-item"><span class="review-bar warn"></span><div><h3>1 笔规则内撤单</h3><p>中际旭创价格偏离 11bp，超过 10bp 上限。</p></div><span class="badge badge-warning">已解释</span></div></div></article>
+          <article class="card" data-od-id="execution-reconciliation"><div class="card-header"><div><h2 class="card-title">账实核对</h2><p class="card-note">券商回报与本地账本</p></div><span class="badge badge-positive">一致</span></div><div class="detail-list"><div class="detail-row"><span>券商成交金额</span><strong class="num">¥188,740.00</strong></div><div class="detail-row"><span>本地成交金额</span><strong class="num">¥188,740.00</strong></div><div class="detail-row"><span>费用差异</span><strong class="num">¥0.00</strong></div><div class="detail-row"><span>持仓数量差异</span><strong class="num">0 股</strong></div></div><div class="divider"></div><p class="card-note">最后核对：2026-07-14 15:35:12</p></article>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div data-app-mobile-nav></div>
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="个人 A 股量化交易面板首页总览">
+  <title>总览 · Quant Ledger</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" data-od-id="desktop-sidebar">
+      <a class="brand" href="index.html" data-od-id="brand-home-link"><span class="brand-mark">QL</span><span>Quant Ledger</span></a>
+      <div class="nav-group">
+        <p class="nav-label">交易工作台</p>
+        <nav class="side-nav" aria-label="主导航" data-od-id="desktop-primary-nav">
+          <a class="nav-link active" href="index.html" aria-current="page"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>总览</a>
+          <a class="nav-link" href="trade-plan.html"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3v3m12-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1Z"/><path d="m8 15 2 2 5-5"/></svg>交易计划</a>
+          <a class="nav-link" href="account.html"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 7h16v12H4zM7 7V5h10v2M8 13h5"/></svg>账户</a>
+          <a class="nav-link" href="execution.html"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h14v16H5zM8 9h8M8 13h5M8 17h7"/></svg>执行复盘</a>
+          <a class="nav-link" href="research.html"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3-3V4Z"/><path d="M8 8h7M8 12h6"/></svg>研究库</a>
+          <a class="nav-link" href="system.html"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7-.7-2h-3l-.7 2-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2h3l.7-2 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7 2-.7Z"/></svg>系统状态</a>
+        </nav>
+      </div>
+      <div class="sidebar-foot" data-od-id="sidebar-system-summary">
+        <div class="system-mini"><span class="status-dot"></span><strong>系统正常</strong></div>
+        <small>数据更新至 15:35:12</small>
+      </div>
+    </aside>
+
+    <main class="page-main" data-od-id="overview-main">
+      <header class="mobile-header" data-od-id="mobile-header">
+        <a class="brand" href="index.html"><span class="brand-mark">QL</span><span>Quant Ledger</span></a>
+        <span class="badge badge-positive">数据新鲜</span>
+      </header>
+      <div class="page-wrap">
+        <header class="page-header" data-od-id="overview-header">
+          <div>
+            <p class="eyebrow">模拟数据 · 个人工作台</p>
+            <h1 class="page-title">今天收好尾，明天按计划出手。</h1>
+            <p class="page-subtitle">先看明日交易动作，再核对仓位风险、执行偏差和系统新鲜度。</p>
+          </div>
+          <div class="header-actions">
+            <div class="date-switcher" aria-label="交易日期切换" data-od-id="overview-date-switcher">
+              <button class="button icon-button" type="button" data-date-step="-1" aria-label="上一个交易日">←</button>
+              <time class="date-label" datetime="2026-07-14" data-current-date>2026-07-14</time>
+              <button class="button icon-button" type="button" data-date-step="1" aria-label="下一个交易日">→</button>
+            </div>
+          </div>
+        </header>
+
+        <section class="grid grid-5" data-od-id="account-metrics">
+          <article class="card metric-card" data-od-id="metric-total-assets"><div class="metric-label">总资产</div><div class="metric-value">¥1,286,430</div><div class="metric-foot"><span class="positive">+0.82%</span><span>今日</span></div></article>
+          <article class="card metric-card" data-od-id="metric-cash"><div class="metric-label">可用现金</div><div class="metric-value">¥286,120</div><div class="metric-foot"><span>占比</span><span class="num">22.24%</span></div></article>
+          <article class="card metric-card" data-od-id="metric-market-value"><div class="metric-label">持仓市值</div><div class="metric-value">¥1,000,310</div><div class="metric-foot"><span>4 只持仓</span></div></article>
+          <article class="card metric-card" data-od-id="metric-unrealized"><div class="metric-label">浮动盈亏</div><div class="metric-value positive">+¥32,640</div><div class="metric-foot"><span class="positive">+3.37%</span><span>持仓成本</span></div></article>
+          <article class="card metric-card" data-od-id="metric-drawdown"><div class="metric-label">当前回撤</div><div class="metric-value negative">-4.60%</div><div class="metric-foot"><span>近 90 日峰值</span></div></article>
+        </section>
+
+        <section class="section grid grid-main" data-od-id="tomorrow-plan-and-system">
+          <article class="plan-summary" data-od-id="tomorrow-plan-summary">
+            <div class="plan-head">
+              <div>
+                <div class="plan-date">明日计划 · 2026-07-15 · 数据截止 15:35</div>
+                <h2 class="plan-thesis">降低高波动成长暴露，补回低估值金融仓位。</h2>
+                <p class="plan-meta">策略：多因子中频轮动 v3.4 · 目标总仓位 78% → 76%</p>
+              </div>
+              <span class="badge badge-warning">4 笔待执行</span>
+            </div>
+            <div class="plan-list" aria-label="明日交易动作">
+              <div class="plan-row"><div><span class="stock-name">宁德时代</span><span class="stock-code">300750</span></div><div class="action-buy">买入</div><div class="weight-change">10% → 14%</div><div class="reason">盈利质量分位提升，动量转正</div><button type="button" aria-label="查看宁德时代计划详情" data-drawer-target="stock-drawer" data-stock-code="300750">›</button></div>
+              <div class="plan-row"><div><span class="stock-name">中国平安</span><span class="stock-code">601318</span></div><div class="action-buy">买入</div><div class="weight-change">8% → 11%</div><div class="reason">估值修复，行业风险预算释放</div><button type="button" aria-label="查看中国平安计划详情" data-drawer-target="stock-drawer" data-stock-code="601318">›</button></div>
+              <div class="plan-row"><div><span class="stock-name">中际旭创</span><span class="stock-code">300308</span></div><div class="action-sell">卖出</div><div class="weight-change">12% → 8%</div><div class="reason">波动率超阈值，集中度偏高</div><button type="button" aria-label="查看中际旭创计划详情" data-drawer-target="stock-drawer" data-stock-code="300308">›</button></div>
+              <div class="plan-row"><div><span class="stock-name">贵州茅台</span><span class="stock-code">600519</span></div><div class="action-sell">卖出</div><div class="weight-change">18% → 15%</div><div class="reason">控制单票上限，释放现金缓冲</div><button type="button" aria-label="查看贵州茅台计划详情" data-drawer-target="stock-drawer" data-stock-code="600519">›</button></div>
+            </div>
+            <div class="header-actions" style="margin-top:18px; justify-content:flex-start;"><a class="button button-primary" href="trade-plan.html" data-od-id="open-full-plan">查看完整计划</a><button class="button" type="button" data-download>导出计划</button></div>
+          </article>
+
+          <aside class="card card-strong" data-od-id="system-readiness-card">
+            <div class="card-header"><div><h2 class="card-title">开盘准备度</h2><p class="card-note">关键链路最后检查</p></div><span class="badge badge-positive">可执行</span></div>
+            <div class="review-list">
+              <div class="review-item"><span class="review-bar good"></span><div><h3>TDX 行情连接</h3><p>心跳 8 秒前，行情日期 2026-07-14</p></div><span class="num positive">正常</span></div>
+              <div class="review-item"><span class="review-bar good"></span><div><h3>策略 runner</h3><p>最近任务 15:32 完成，耗时 42 秒</p></div><span class="num positive">正常</span></div>
+              <div class="review-item"><span class="review-bar warn"></span><div><h3>账户同步</h3><p>成交回报延迟 26 秒，低于 60 秒阈值</p></div><span class="num">关注</span></div>
+            </div>
+            <div class="divider"></div>
+            <a class="text-link" href="system.html">查看 1 条待确认异常 →</a>
+          </aside>
+        </section>
+
+        <section class="section grid grid-2" data-od-id="risk-and-execution-summary">
+          <article class="card" data-od-id="risk-summary-card">
+            <div class="card-header"><div><h2 class="card-title">仓位与风险</h2><p class="card-note">总仓位 77.76% · 最大单票 18.20%</p></div><a class="text-link" href="account.html">账户详情 →</a></div>
+            <div class="allocation-bar" aria-label="持仓分布"><span class="allocation-segment" style="width:23.4%"></span><span class="allocation-segment" style="width:18.2%"></span><span class="allocation-segment" style="width:15.4%"></span><span class="allocation-segment" style="width:20.8%"></span><span class="allocation-segment" style="width:22.2%"></span></div>
+            <div class="legend"><span class="legend-item"><i class="legend-swatch"></i>宁德时代 23.4%</span><span class="legend-item"><i class="legend-swatch"></i>贵州茅台 18.2%</span><span class="legend-item"><i class="legend-swatch"></i>中际旭创 15.4%</span><span class="legend-item"><i class="legend-swatch"></i>其他持仓 20.8%</span><span class="legend-item"><i class="legend-swatch"></i>现金 22.2%</span></div>
+            <div class="divider"></div>
+            <div class="risk-list">
+              <div><div class="risk-row-head"><span>单票集中度</span><span class="num">18.2% / 20%</span></div><div class="progress-track"><div class="progress-fill" style="--progress:91%"></div></div></div>
+              <div><div class="risk-row-head"><span>行业集中度</span><span class="num">31.2% / 35%</span></div><div class="progress-track"><div class="progress-fill" style="--progress:89%"></div></div></div>
+            </div>
+          </article>
+
+          <article class="card" data-od-id="execution-summary-card">
+            <div class="card-header"><div><h2 class="card-title">当日执行复盘</h2><p class="card-note">6 笔计划 · 5 笔成交 · 1 笔撤单</p></div><a class="text-link" href="execution.html">完整复盘 →</a></div>
+            <div class="grid grid-3">
+              <div><div class="metric-label">成交率</div><div class="metric-value">83.3%</div></div>
+              <div><div class="metric-label">平均滑点</div><div class="metric-value positive">-3.2bp</div></div>
+              <div><div class="metric-label">账实差异</div><div class="metric-value">¥0</div></div>
+            </div>
+            <div class="divider"></div>
+            <div class="review-list">
+              <div class="review-item"><span class="review-bar good"></span><div><h3>按计划完成 5 笔委托</h3><p>成交价格均在允许滑点范围内</p></div><span class="badge badge-positive">通过</span></div>
+              <div class="review-item"><span class="review-bar warn"></span><div><h3>中际旭创尾盘撤单</h3><p>价格偏离上限 11bp，未追价</p></div><span class="badge badge-warning">需复核</span></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="section grid grid-2" data-od-id="research-and-activity-summary">
+          <article class="card" data-od-id="research-summary-card">
+            <div class="card-header"><div><h2 class="card-title">可用研究结论</h2><p class="card-note">最近 30 日完成 6 份研究</p></div><a class="text-link" href="research.html">研究库 →</a></div>
+            <div class="review-list">
+              <div class="review-item"><span class="review-bar good"></span><div><h3>盈利质量因子在中证 800 的稳定性</h3><p>滚动三年 IC 为正，换手成本后仍有效</p></div><span class="badge badge-positive">接受</span></div>
+              <div class="review-item"><span class="review-bar warn"></span><div><h3>小市值反转组合参数扩展</h3><p>2024–2025 样本外衰减明显</p></div><span class="badge badge-danger">拒绝</span></div>
+            </div>
+          </article>
+          <article class="card" data-od-id="recent-activity-card">
+            <div class="card-header"><div><h2 class="card-title">最近活动</h2><p class="card-note">策略、数据与人工确认记录</p></div></div>
+            <div class="timeline">
+              <div class="timeline-item"><div class="timeline-time">15:35:12</div><h3 class="timeline-title">账户快照同步完成</h3><p class="timeline-copy">持仓、资金与成交回报账实一致。</p></div>
+              <div class="timeline-item"><div class="timeline-time">15:32:41</div><h3 class="timeline-title">明日交易计划生成</h3><p class="timeline-copy">4 笔目标调整，预计净卖出 ¥25,600。</p></div>
+              <div class="timeline-item"><div class="timeline-time">15:18:03</div><h3 class="timeline-title">尾盘委托复核</h3><p class="timeline-copy">中际旭创撤单，不执行追价。</p></div>
+            </div>
+          </article>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="移动端主导航" data-od-id="mobile-primary-nav">
+    <a class="active" href="index.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>总览</a>
+    <a href="trade-plan.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3v3m12-3v3M4 9h16M5 5h14v15H4V6a1 1 0 0 1 1-1Z"/></svg>计划</a>
+    <a href="account.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 7h16v12H4zM7 7V5h10v2"/></svg>账户</a>
+    <a href="execution.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h14v16H5zM8 9h8M8 13h5"/></svg>复盘</a>
+    <a href="research.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3-3V4Z"/></svg>研究</a>
+    <a href="system.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>系统</a>
+  </nav>
+
+  <div class="drawer-overlay" id="stock-drawer" aria-hidden="true" data-od-id="stock-detail-drawer">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="stock-drawer-title">
+      <div class="drawer-header"><div><p class="eyebrow">计划详情 · 模拟</p><h2 id="stock-drawer-title"><span data-stock-field="name">宁德时代</span> <span class="stock-code" data-stock-field="code">300750</span></h2></div><button class="button icon-button" type="button" data-drawer-close aria-label="关闭详情">×</button></div>
+      <section class="drawer-section" data-od-id="stock-drawer-order"><h3>目标委托</h3><div class="detail-list"><div class="detail-row"><span>方向</span><strong class="action-buy" data-stock-field="action">买入</strong></div><div class="detail-row"><span>目标仓位</span><strong class="num" data-stock-field="target">10% → 14%</strong></div><div class="detail-row"><span>预计数量</span><strong class="num" data-stock-field="qty">200 股</strong></div><div class="detail-row"><span>允许价格</span><strong class="num">决策价 ± 0.8%</strong></div><div class="detail-row"><span>最晚执行</span><strong class="num">10:45</strong></div></div></section>
+      <section class="drawer-section" data-od-id="stock-drawer-reason"><h3>为什么调整</h3><p data-stock-field="reason">盈利质量分位由 68% 升至 84%，20 日动量重新转正；组合层面成长行业风险预算仍有空间。</p></section>
+      <section class="drawer-section" data-od-id="stock-drawer-risk"><h3>不执行条件</h3><p data-stock-field="condition">若集合竞价高开超过 2.5%，或开盘 15 分钟成交额低于同期中位数 60%，取消当日买入。</p></section>
+    </aside>
+  </div>
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+  <script src="assets/app.js"></script>
+</body>
+</html>
